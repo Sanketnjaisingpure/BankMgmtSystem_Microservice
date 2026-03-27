@@ -18,6 +18,7 @@ public class CreateCustomerDTO {
     @Size(min = 2, max = 30)
     private String lastName;
 
+    @NotNull(message = "Email is required")
     @Email(message = "Invalid email structure")
     private String email;
 

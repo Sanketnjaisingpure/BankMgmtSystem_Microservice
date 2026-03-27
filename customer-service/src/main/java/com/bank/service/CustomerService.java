@@ -15,14 +15,16 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 @Service
 public class CustomerService {
 
     private final CustomerRepository customerRepository;
+
+    private static final Logger logger = LoggerFactory.getLogger(CustomerService.class);
 
     private final MapperConfig mapperConfig;
 
@@ -31,33 +33,39 @@ public class CustomerService {
         this.mapperConfig = mapperConfig;
     }
 
-
+// use logger method
     // Handle Customer properly
     public CustomerDTO findByEmail(String email) {
-
+        logger.info("Fetching customer by email: {}", email);
         Customer customer = customerRepository.findByEmail(email);
         if (customer==null){
+            logger.error("Customer not found for email: {}", email);
             throw new ResourceNotFoundException("Customer not found " + email);
         }
+        logger.info("Customer found for email: {}", email);
         return convertToDTO(customer);
     }
 
     // find customer by id
     public CustomerDTO findById(UUID customerId) {
+        logger.info("Fetching customer by id: {}", customerId);
         Customer customer =  customerRepository.findById(customerId).orElse(null);
         if (customer==null){
+            logger.error("Customer not found for id: {}", customerId);
             throw new ResourceNotFoundException("Customer not found");
         }
-        return null;
+        logger.info("Customer found for id: {}", customerId);
+        return convertToDTO(customer);
     }
 
 
     // Add or Create customer
     public CustomerDTO createCustomer(CreateCustomerDTO createCustomerDTO) {
-
+        logger.info("Creating customer with | Mobile number {} | email {}" , createCustomerDTO.getMobileNumber() , createCustomerDTO.getEmail());
         Customer customer = convertToEntity(createCustomerDTO);
 
         if(customerRepository.existByEmailOrMobileNumber(createCustomerDTO.getEmail(), createCustomerDTO.getMobileNumber())!=null){
+            logger.error("Customer already exist  with Mobile number {} or email {} " , createCustomerDTO.getMobileNumber() , createCustomerDTO.getEmail());
             throw new DuplicateResourceException(createCustomerDTO.getEmail(), createCustomerDTO.getMobileNumber());
         }
 
@@ -65,8 +73,14 @@ public class CustomerService {
         customer.setCreatedAt(LocalDateTime.now());
         customer.setUpdatedAt(LocalDateTime.now());
 
-         customerRepository.save(customer);
-
+        try {
+            customerRepository.save(customer);
+            logger.info("Customer created successfully with | Id {} " ,customer.getCustomerId());
+        }
+        catch (Exception ex){
+            logger.error("Failed to create customer with | Mobile number {} | email {}" , createCustomerDTO.getMobileNumber() , createCustomerDTO.getEmail());
+            throw new RuntimeException("Failed to create customer");
+        }
          return convertToDTO(customer);
 
     }
@@ -74,19 +88,27 @@ public class CustomerService {
     // update customer Info
 
     public CustomerDTO updateCustomer( UpdateCustomerDTO updateCustomerDTO){
-
+        logger.info("Updating customer with email {}" , updateCustomerDTO.getEmail());
         Customer customer = customerRepository.findByEmail(updateCustomerDTO.getEmail());
 
         if (customer==null){
+            logger.error("Customer not found with email {}" , updateCustomerDTO.getEmail());
             throw new ResourceNotFoundException("Customer not found");
         }
 
-        customer.setFirstName(updateCustomerDTO.getFirstName());
-        customer.setLastName(updateCustomerDTO.getLastName());
-        customer.setMobileNumber(updateCustomerDTO.getMobileNumber());
-        customer.setUpdatedAt(LocalDateTime.now());
+        try {
+            customer.setFirstName(updateCustomerDTO.getFirstName());
+            customer.setLastName(updateCustomerDTO.getLastName());
+            customer.setMobileNumber(updateCustomerDTO.getMobileNumber());
+            customer.setUpdatedAt(LocalDateTime.now());
+            customerRepository.save(customer);
+            logger.info("Customer updated successfully with | Mobile number {} | email {}" , updateCustomerDTO.getMobileNumber() , updateCustomerDTO.getEmail());
 
-        customerRepository.save(customer);
+        }
+        catch (Exception ex){
+            logger.error("Failed to update customer with | Mobile number {} | email {}" , updateCustomerDTO.getMobileNumber() , updateCustomerDTO.getEmail());
+            throw new RuntimeException("Failed to update customer");
+        }
 
         return  convertToDTO(customer);
     }
@@ -95,13 +117,22 @@ public class CustomerService {
     // delete customer
 
     public void deleteCustomer(UUID customerId) {
+        logger.info("Deleting customer with id {}" , customerId);
         findById(customerId);
-        customerRepository.deleteById(customerId);
+        try {
+            customerRepository.deleteById(customerId);
+            logger.error("Customer deleted Successfully | Customer Id {} ", customerId);
+        }
+        catch (Exception ex){
+            logger.error("Failed to delete customer with id {}" , customerId);
+            throw new RuntimeException("Failed to delete customer");
+
+        }
     }
 
     // findAll customers
     public PageResponse<CustomerDTO> findAllCustomers(int pageNumber, int pageSize, String sortBy, String order) {
-        List<Customer> list = customerRepository.findAll();
+        logger.info("Fetching all customers");
         Sort sort = Sort.by(sortBy).ascending();
         if(order.equals("desc")){
             sort = Sort.by(sortBy).descending();

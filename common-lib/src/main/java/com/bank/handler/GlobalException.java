@@ -5,6 +5,8 @@ import com.bank.exception.BadRequestException;
 import com.bank.exception.DuplicateResourceException;
 import com.bank.exception.ResourceNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -14,14 +16,17 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import com.bank.dto.ErrorResponse;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 @RestControllerAdvice
 public class GlobalException {
 
+
+    private static final Logger logger = LoggerFactory.getLogger(GlobalException.class);
 
     /**
      * Handle Resource Not Found (404)
@@ -33,6 +38,7 @@ public class GlobalException {
             ResourceNotFoundException ex,
             HttpServletRequest request) {
 
+        logger.error("Resource not found: {} - Path: {}", ex.getMessage(), request.getRequestURI());
         ErrorResponse errorResponse = ErrorResponse.builder()
                 .timestamp(LocalDateTime.now())
                 .status(HttpStatus.NOT_FOUND.value())
@@ -48,7 +54,7 @@ public class GlobalException {
     public ResponseEntity<ErrorResponse> handleNoHandlerFound(
             NoHandlerFoundException ex,
             HttpServletRequest request) {
-
+        logger.error("Endpoint not found: {} {} - Path: {}", ex.getHttpMethod(), ex.getRequestURL(), request.getRequestURI());
         ErrorResponse errorResponse = ErrorResponse.builder()
                 .timestamp(LocalDateTime.now())
                 .status(HttpStatus.NOT_FOUND.value())
@@ -68,7 +74,7 @@ public class GlobalException {
     public ResponseEntity<ErrorResponse> handleValidationException(
             MethodArgumentNotValidException ex,
             HttpServletRequest request) {
-
+        logger.error("Validation failed for request to {}: {}", request.getRequestURI(), ex.getMessage());
         List<ErrorResponse.ValidationError> validationErrors = new ArrayList<>();
 
         ex.getBindingResult().getAllErrors().forEach(error -> {
@@ -99,6 +105,24 @@ public class GlobalException {
 
 
 
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMethodNotSupported(
+            HttpRequestMethodNotSupportedException ex,
+            HttpServletRequest request) {
+
+        String message = "Method " + ex.getMethod() + " not supported for this endpoint";
+        logger.error("Method not supported: {} - Path: {}", ex.getMethod(), request.getRequestURI());
+        ErrorResponse error = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.METHOD_NOT_ALLOWED.value())
+                .error(HttpStatus.METHOD_NOT_ALLOWED.getReasonPhrase())
+                .message(message)
+                .path(request.getRequestURI())
+                .build();
+
+        return new ResponseEntity<>(error, HttpStatus.METHOD_NOT_ALLOWED);
+    }
+
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ErrorResponse> handleTypeMismatch(
             MethodArgumentTypeMismatchException ex,
@@ -110,7 +134,8 @@ public class GlobalException {
                 ex.getName(),
                 ex.getRequiredType().getSimpleName()
         );
-
+        logger.error("Type mismatch for parameter '{}': value '{}' - Expected type: {} - Path: {}", 
+                ex.getName(), ex.getValue(), ex.getRequiredType().getSimpleName(), request.getRequestURI());
         ErrorResponse errorResponse = ErrorResponse.builder()
                 .timestamp(LocalDateTime.now())
                 .status(HttpStatus.BAD_REQUEST.value())
@@ -131,11 +156,36 @@ public class GlobalException {
             BadRequestException ex,
             HttpServletRequest request) {
 
+        logger.error("Bad request: {} - Path: {}", ex.getMessage(), request.getRequestURI());
         ErrorResponse errorResponse = ErrorResponse.builder()
                 .timestamp(LocalDateTime.now())
                 .status(HttpStatus.BAD_REQUEST.value())
                 .error(HttpStatus.BAD_REQUEST.getReasonPhrase())
                 .message(ex.getMessage())
+                .path(request.getRequestURI())
+                .build();
+
+        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+    }
+
+    /**
+     * Handle Missing Request Parameter (400)
+     * Triggered when: Required request parameter is missing
+     */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ErrorResponse> handleMissingServletRequestParameter(
+            MissingServletRequestParameterException ex,
+            HttpServletRequest request) {
+
+        String message = String.format("Required parameter '%s' of type '%s' is missing", 
+                ex.getParameterName(), ex.getParameterType());
+        logger.error("Missing request parameter: {} - Path: {}", ex.getParameterName(), request.getRequestURI());
+        
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error(HttpStatus.BAD_REQUEST.getReasonPhrase())
+                .message(message)
                 .path(request.getRequestURI())
                 .build();
 
@@ -155,7 +205,7 @@ public class GlobalException {
     public ResponseEntity<ErrorResponse> handleDuplicateResourceException(
             DuplicateResourceException ex,
             HttpServletRequest request) {
-
+        logger.error("Duplicate resource: {} - Path: {}", ex.getMessage(), request.getRequestURI());
         ErrorResponse errorResponse = ErrorResponse.builder()
                 .timestamp(LocalDateTime.now())
                 .status(HttpStatus.CONFLICT.value())
@@ -201,7 +251,7 @@ public class GlobalException {
             HttpServletRequest request) {
 
         // Log the full exception for debugging
-        ex.printStackTrace();
+        logger.error("Unexpected error occurred: {} - Path: {}", ex.getMessage(), request.getRequestURI(), ex);
 
         ErrorResponse errorResponse = ErrorResponse.builder()
                 .timestamp(LocalDateTime.now())
