@@ -25,6 +25,13 @@ public class CustomerController {
         this.customerService = customerService;
     }
 
+
+    @GetMapping("/find-by-id")
+    public ResponseEntity<CustomerDTO> findById(@RequestParam UUID customerId) {
+        logger.info("Received request to fetch customer with id : {} ",customerId);
+        CustomerDTO dto = customerService.findById(customerId);
+        return ResponseEntity.status(HttpStatus.OK).body(dto);
+    }
     @GetMapping("/find-by-email")
     public ResponseEntity<CustomerDTO> findByEmail(@RequestParam String email) {
         logger.info("Received request to fetch customer with email : {} ",email);
