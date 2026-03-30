@@ -11,6 +11,6 @@ import java.util.UUID;
 @FeignClient(name="CUSTOMER-SERVICE")
 public interface CustomerFeignService {
 
-    @GetMapping("/find-by-id")
+    @GetMapping("/api/v1/customers/find-by-id")
     ResponseEntity<CustomerDTO> findById(@RequestParam UUID customerId);
 }
