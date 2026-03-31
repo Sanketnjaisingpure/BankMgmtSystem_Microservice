@@ -3,17 +3,14 @@ package com.bank.service;
 
 import com.bank.ENUM.AccountStatus;
 import com.bank.config.MapperConfig;
-import com.bank.dto.AccountRequestDTO;
-import com.bank.dto.AccountResponseDTO;
-import com.bank.dto.CustomerDTO;
-import com.bank.dto.PageResponse;
+import com.bank.dto.*;
 import com.bank.exception.ResourceNotFoundException;
 import com.bank.feign.CustomerFeignService;
+import com.bank.feign.NotificationFeignService;
 import com.bank.model.Account;
 import com.bank.repository.AccountRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -21,7 +18,6 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -34,6 +30,8 @@ public class AccountService {
 
     private final CustomerFeignService customerFeignService;
 
+    private final NotificationFeignService notificationFeignService;
+
     private static final Logger logger = LoggerFactory.getLogger(AccountService.class);
 
     private final MapperConfig mapperConfig;
@@ -43,8 +41,9 @@ public class AccountService {
    private static final AtomicInteger sequenceCounter = new AtomicInteger(1000);
 
 
-   public AccountService(AccountRepository accountRepository,CustomerFeignService customerFeignService , MapperConfig mapperConfig) {
+   public AccountService(AccountRepository accountRepository, NotificationFeignService notificationFeignService,CustomerFeignService customerFeignService , MapperConfig mapperConfig) {
        this.accountRepository = accountRepository;
+       this.notificationFeignService = notificationFeignService;
        this.mapperConfig = mapperConfig;
        this.customerFeignService = customerFeignService;
    }
@@ -67,34 +66,52 @@ public class AccountService {
    }
 
 
-    public AccountResponseDTO createAccount(AccountRequestDTO accountdto) {
+    public AccountResponseDTO createAccount(AccountRequestDTO accountDto) {
         logger.info("Creating new Account");
-        CustomerDTO customerDTO = customerFeignService.findById(accountdto.getCustomerId()).getBody();
+        CustomerDTO customerDTO;
+        try {
+
+            customerDTO = customerFeignService.findById(accountDto.getCustomerId()).getBody();
+            logger.info("customer details fetch successfully !!!");
+        }
+        catch(Exception e){
+            logger.error("Failed to create account", e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to fetch customer");
+        }
 
         if(customerDTO == null){
             throw new ResourceNotFoundException("Customer Not Found");
         }
 
         Account account = new Account();
-        account.setAccountType(accountdto.getAccountType());
+        account.setAccountType(accountDto.getAccountType());
 
-        if(accountdto.getBalance().compareTo(BigDecimal.valueOf(500.0)) <= 0){
+        if(accountDto.getBalance().compareTo(BigDecimal.valueOf(500.0)) <= 0){
             throw new IllegalArgumentException("Balance must be greater than 500");
         }
-        account.setBalance(accountdto.getBalance());
+        account.setBalance(accountDto.getBalance());
         account.setStatus(AccountStatus.ACTIVE);
         
         // Generate unique account number using customer's mobile number
         String accountNumber = generateAccountNumber(customerDTO.getMobileNumber());
         account.setAccountNumber(accountNumber);
         
-        account.setBranchName(accountdto.getBranchName());
-        account.setIfscCode(accountdto.getIfscCode());
-        account.setCustomerId(accountdto.getCustomerId());
+        account.setBranchName(accountDto.getBranchName());
+        account.setIfscCode(accountDto.getIfscCode());
+        account.setCustomerId(accountDto.getCustomerId());
         account.setCreatedAt(LocalDateTime.now());
         account.setUpdatedAt(LocalDateTime.now());
         try{
+            logger.info("account created successfully");
             accountRepository.save(account);
+
+            // sending Notification
+            NotificationRequestDTO dto = new NotificationRequestDTO();
+            dto.setCustomerId(accountDto.getCustomerId());
+            dto.setMessage("Account created successfully");
+            dto.setEmail(customerDTO.getEmail());
+            dto.setPhone(customerDTO.getMobileNumber());
+            notificationFeignService.sendNotification(dto);
         }
         catch(Exception e){
             logger.error("Failed to create account", e);
@@ -125,20 +142,21 @@ public class AccountService {
     }
 
 
-    public PageResponse<AccountResponseDTO> getAllAccountsByCustomerId(String customerId, int pageNumber, int pageSize, String sortBy, String order) {
+    public PageResponse<AccountResponseDTO> getAllAccountsByCustomerId(UUID customerId, int pageNumber, int pageSize, String sortBy, String order) {
         logger.info("Fetching All Accounts for Customer with Customer ID : {} ", customerId);
 
         Sort sort = Sort.by(sortBy).ascending();
-        if (sortBy.equalsIgnoreCase("desc")){
+        if (sortBy.equalsIgnoreCase(order)){
             sort = Sort.by(sortBy).descending();
         }
         Pageable pageable = PageRequest.of(pageNumber, pageSize,sort);
 
-        Page<Account> page =accountRepository.findAll(pageable);
+        Page<Account> pageAccount = accountRepository.findAccountsByCustomerId(customerId, pageable);
 
-        List<AccountResponseDTO> list = page.getContent().stream().map(this::convertToAccountResponseDTO).toList();
+        List<AccountResponseDTO> list = pageAccount.getContent().stream().filter(account -> account.getCustomerId().equals(customerId)).map(this::convertToAccountResponseDTO).toList();
 
-        return new PageResponse<>(list, page.getNumber(), page.getTotalElements(), page.getTotalPages());
+
+        return new PageResponse<>(list, pageAccount.getNumber(), pageAccount.getTotalElements(), pageAccount.getTotalPages());
 
     }
 

@@ -26,9 +26,9 @@ public class AccountController {
     }
 
     @PostMapping("/create-account")
-    public ResponseEntity<AccountResponseDTO> createAccount(@RequestBody AccountRequestDTO accountdto) {
+    public ResponseEntity<AccountResponseDTO> createAccount(@RequestBody AccountRequestDTO accountDto) {
         logger.info("Received Request to create new Account");
-        AccountResponseDTO dto = accountService.createAccount(accountdto);
+        AccountResponseDTO dto = accountService.createAccount(accountDto);
         return ResponseEntity.status(HttpStatus.CREATED).body(dto);
     }
 
@@ -43,10 +43,10 @@ public class AccountController {
 
     @GetMapping("/get-all-accounts-by-customer-id")
     public ResponseEntity<PageResponse<AccountResponseDTO>> getAllAccountsByCustomerId(
-            @RequestParam String customerId,
+            @RequestParam UUID customerId,
             @RequestParam(value = "pageNumber" ,defaultValue = "0") int pageNumber ,
             @RequestParam(value = "pageSize" ,defaultValue = "10") int pageSize,
-            @RequestParam(value = "sort" ,defaultValue = "firstName") String sort,
+            @RequestParam(value = "sort" ,defaultValue = "accountNumber") String sort,
             @RequestParam(value = "order" ,defaultValue = "asc") String order) {
 
 
@@ -56,7 +56,7 @@ public class AccountController {
     }
 
     @GetMapping("/get-account-by-Id")
-    public ResponseEntity<AccountResponseDTO> getAccountById(@PathVariable UUID accountId) {
+    public ResponseEntity<AccountResponseDTO> getAccountById(@RequestParam UUID accountId) {
         logger.info("Received Request to fetch Account by Account ID : {} ", accountId);
         AccountResponseDTO dto = accountService.getAccountById(accountId);
         return ResponseEntity.ok(dto);
@@ -77,13 +77,10 @@ public class AccountController {
     }
 
     @DeleteMapping("/delete-account-by-Id")
-    public ResponseEntity<String> deleteAccountById(@PathVariable UUID accountId) {
+    public ResponseEntity<String> deleteAccountById(@RequestParam UUID accountId) {
         logger.info("Received Request to delete Account by Account ID : {} ", accountId);
         accountService.deleteAccount(accountId);
         return ResponseEntity.noContent().build();
     }
-
-
-
 
 }
