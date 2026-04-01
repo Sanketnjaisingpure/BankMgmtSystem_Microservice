@@ -29,5 +29,7 @@ public class Notification {
 
     private LocalDateTime sentAt;
 
+    private int retryCount=0;
+
     private String status;
 }

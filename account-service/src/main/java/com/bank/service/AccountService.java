@@ -68,6 +68,11 @@ public class AccountService {
 
     public AccountResponseDTO createAccount(AccountRequestDTO accountDto) {
         logger.info("Creating new Account");
+
+        if(accountDto.getBalance().compareTo(BigDecimal.valueOf(500.0)) <= 0){
+            throw new IllegalArgumentException("Balance must be greater than 500");
+        }
+
         CustomerDTO customerDTO;
         try {
 
@@ -75,7 +80,7 @@ public class AccountService {
             logger.info("customer details fetch successfully !!!");
         }
         catch(Exception e){
-            logger.error("Failed to create account", e);
+            logger.error("Failed to fetch customer", e);
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to fetch customer");
         }
 
@@ -86,9 +91,7 @@ public class AccountService {
         Account account = new Account();
         account.setAccountType(accountDto.getAccountType());
 
-        if(accountDto.getBalance().compareTo(BigDecimal.valueOf(500.0)) <= 0){
-            throw new IllegalArgumentException("Balance must be greater than 500");
-        }
+
         account.setBalance(accountDto.getBalance());
         account.setStatus(AccountStatus.ACTIVE);
         
@@ -114,8 +117,8 @@ public class AccountService {
             notificationFeignService.sendNotification(dto);
         }
         catch(Exception e){
-            logger.error("Failed to create account", e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to create account");
+            logger.error("Account Created Successfully but failed to send notification", e);
+            throw new ResponseStatusException(HttpStatus.CREATED, "Account created successfully but failed to send notification!!!");
         }
         return convertToAccountResponseDTO(account);
    }

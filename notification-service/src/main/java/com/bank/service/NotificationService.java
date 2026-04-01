@@ -6,6 +6,7 @@ import com.bank.model.Notification;
 import com.bank.repository.NotificationRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -23,6 +24,7 @@ public class NotificationService {
         this.notificationRepository = notificationRepository;
     }
 
+    @Async
     public void sendAccountCreationNotification(NotificationRequestDTO dto) {
 
         logger.info("Sending account creation notification for customer: {}", dto.getCustomerId());
