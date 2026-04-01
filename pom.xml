@@ -24,6 +24,11 @@
     <module>eureka-registry</module>
     <module>account-service</module>
     <module>notification-service</module>
+      <module>transaction-service</module>
+    <module>loan-service</module>
+    <module>api-gateway</module>
+    <module>credit-card-service</module>
+    <module>bank-service</module>
 
   </modules>
 
