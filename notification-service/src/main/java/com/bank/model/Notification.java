@@ -1,10 +1,7 @@
 package com.bank.model;
 
 import com.bank.ENUM.ChannelType;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
+import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
@@ -23,12 +20,14 @@ public class Notification {
 
     private UUID customerId;
 
+    @Enumerated(EnumType.STRING)
     private ChannelType channelType;
 
     private String message;
 
     private LocalDateTime sentAt;
 
+    @Column(name = "retry_count")
     private int retryCount=0;
 
     private String status;

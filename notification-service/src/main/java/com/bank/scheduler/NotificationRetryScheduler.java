@@ -1,7 +1,9 @@
-package scheduler;
+package com.bank.scheduler;
 
 import com.bank.model.Notification;
 import com.bank.repository.NotificationRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -16,11 +18,17 @@ public class NotificationRetryScheduler {
     @Autowired
     private NotificationRepository notificationRepository;
 
+
+    private static final Logger logger = LoggerFactory.getLogger(NotificationRetryScheduler.class);
+
     @Async
     @Scheduled(fixedRate = 600000)
     public void retryFailedNotifications() {
 
+        logger.info("Retrying for every failed Notification for every 60 seconds");
+
         List<Notification> failedNotifications = notificationRepository.findByStatus("FAILED");
+
 
         for(Notification notification : failedNotifications) {
             notification.setStatus("SUCCESS");

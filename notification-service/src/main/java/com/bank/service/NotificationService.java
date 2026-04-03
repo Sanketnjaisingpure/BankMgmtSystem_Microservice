@@ -24,7 +24,7 @@ public class NotificationService {
         this.notificationRepository = notificationRepository;
     }
 
-    @Async
+    @Async("notificationExecutor")
     public void sendAccountCreationNotification(NotificationRequestDTO dto) {
 
         logger.info("Sending account creation notification for customer: {}", dto.getCustomerId());

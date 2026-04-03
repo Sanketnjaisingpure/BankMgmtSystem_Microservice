@@ -77,6 +77,11 @@ public class AccountService {
         try {
 
             customerDTO = customerFeignService.findById(accountDto.getCustomerId()).getBody();
+
+            if(customerDTO==null){
+                logger.error("Customer Not Found");
+                throw new ResourceNotFoundException("Customer Not Found");
+            }
             logger.info("customer details fetch successfully !!!");
         }
         catch(Exception e){
@@ -187,10 +192,10 @@ public class AccountService {
 
 
 
-//    PUT/api/accounts/{accountId}/depositCredit amount to account→ Notification Service
+//    PUT/api/accounts/{accountId}/depositCredit amount to account→ Notification Service & Transaction Service
 
 
-//    PUT/api/accounts/{accountId}/withdrawDebit amount from account→ Notification Service
+//    PUT/api/accounts/{accountId}/withdrawDebit amount from account→ Notification Service & Transaction Service
 
 
     public void deleteAccount(UUID accountId) {
