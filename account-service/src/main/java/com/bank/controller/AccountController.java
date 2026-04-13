@@ -20,7 +20,6 @@ public class AccountController {
 
     private static final Logger logger = LoggerFactory.getLogger(AccountController.class);
 
-
     private final AccountService accountService;
 
     public AccountController(AccountService accountService) {
