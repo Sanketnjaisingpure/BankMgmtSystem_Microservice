@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 @RestController
@@ -74,6 +75,26 @@ public class AccountController {
         logger.info("Received Request to fetch Balance for Account Number : {} ", accountNumber);
         AccountResponseDTO balance = accountService.getAccountBalance(accountNumber);
         return ResponseEntity.ok(balance);
+    }
+
+    @PutMapping("/{accountNumber}/depositCredit")
+    public ResponseEntity<AccountResponseDTO> depositCredit(
+            @PathVariable String accountNumber,
+            @RequestParam BigDecimal amount
+    ) {
+        logger.info("Received Request to deposit amount={} to accountNumber={}", amount, accountNumber);
+        AccountResponseDTO dto = accountService.depositCredit(accountNumber, amount);
+        return ResponseEntity.ok(dto);
+    }
+
+    @PutMapping("/{accountNumber}/withdrawDebit")
+    public ResponseEntity<AccountResponseDTO> withdrawDebit(
+            @PathVariable String accountNumber,
+            @RequestParam BigDecimal amount
+    ) {
+        logger.info("Received Request to withdraw amount={} from accountNumber={}", amount, accountNumber);
+        AccountResponseDTO dto = accountService.withdrawDebit(accountNumber, amount);
+        return ResponseEntity.ok(dto);
     }
 
     @DeleteMapping("/delete-account-by-Id")

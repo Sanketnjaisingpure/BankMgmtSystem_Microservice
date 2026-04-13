@@ -1,13 +1,23 @@
 package com.bank;
 
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
+
 /**
  * Hello world!
  *
  */
+@SpringBootApplication
+@EnableAutoConfiguration
+@EnableScheduling
+@EnableAsync
 public class App 
 {
     public static void main( String[] args )
     {
-        System.out.println( "Hello World!" );
+        SpringApplication.run(App.class, args);
     }
 }

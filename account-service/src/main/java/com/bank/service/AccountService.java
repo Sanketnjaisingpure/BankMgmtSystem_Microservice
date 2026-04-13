@@ -7,6 +7,7 @@ import com.bank.dto.*;
 import com.bank.exception.ResourceNotFoundException;
 import com.bank.feign.CustomerFeignService;
 import com.bank.feign.NotificationFeignService;
+import com.bank.service.TransactionAsyncService;
 import com.bank.model.Account;
 import com.bank.repository.AccountRepository;
 import org.slf4j.Logger;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.UUID;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AccountService {
@@ -31,6 +33,8 @@ public class AccountService {
     private final CustomerFeignService customerFeignService;
 
     private final NotificationFeignService notificationFeignService;
+
+    private final TransactionAsyncService transactionAsyncService;
 
     private static final Logger logger = LoggerFactory.getLogger(AccountService.class);
 
@@ -41,11 +45,16 @@ public class AccountService {
    private static final AtomicInteger sequenceCounter = new AtomicInteger(1000);
 
 
-   public AccountService(AccountRepository accountRepository, NotificationFeignService notificationFeignService,CustomerFeignService customerFeignService , MapperConfig mapperConfig) {
+   public AccountService(AccountRepository accountRepository,
+                          NotificationFeignService notificationFeignService,
+                          CustomerFeignService customerFeignService,
+                          TransactionAsyncService transactionAsyncService,
+                          MapperConfig mapperConfig) {
        this.accountRepository = accountRepository;
        this.notificationFeignService = notificationFeignService;
        this.mapperConfig = mapperConfig;
        this.customerFeignService = customerFeignService;
+       this.transactionAsyncService = transactionAsyncService;
    }
 
    private String generateAccountNumber(String mobileNumber) {
@@ -120,6 +129,15 @@ public class AccountService {
             dto.setEmail(customerDTO.getEmail());
             dto.setPhone(customerDTO.getMobileNumber());
             notificationFeignService.sendNotification(dto);
+
+            // Record initial balance as a DEPOSIT transaction (best-effort / async).
+            TransactionRecordRequestDTO transactionRecordRequestDTO = new TransactionRecordRequestDTO();
+            transactionRecordRequestDTO.setSourceAccountNumber(account.getAccountId());
+            transactionRecordRequestDTO.setDestinationAccountNumber(account.getAccountId());
+            transactionRecordRequestDTO.setAmount(accountDto.getBalance());
+            transactionRecordRequestDTO.setTransactionType("DEPOSIT");
+            transactionRecordRequestDTO.setTransactionDescription("Initial account balance");
+            transactionAsyncService.recordTransaction(transactionRecordRequestDTO);
         }
         catch(Exception e){
             logger.error("Account Created Successfully but failed to send notification", e);
@@ -190,12 +208,55 @@ public class AccountService {
         return convertToAccountResponseDTO(account);
     }
 
+    @Transactional
+    public AccountResponseDTO depositCredit(String accountNumber, BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Deposit amount must be greater than 0");
+        }
 
+        Account account = getAccountEntity(accountNumber);
+        account.setBalance(account.getBalance().add(amount));
+        account.setUpdatedAt(LocalDateTime.now());
+        accountRepository.save(account);
 
-//    PUT/api/accounts/{accountId}/depositCredit amount to account→ Notification Service & Transaction Service
+        // Best-effort async transaction logging.
+        TransactionRecordRequestDTO tx = new TransactionRecordRequestDTO();
+        tx.setSourceAccountNumber(account.getAccountId());
+        tx.setDestinationAccountNumber(account.getAccountId());
+        tx.setAmount(amount);
+        tx.setTransactionType("DEPOSIT");
+        tx.setTransactionDescription("Deposit credit of " + amount);
+        transactionAsyncService.recordTransaction(tx);
 
+        return convertToAccountResponseDTO(account);
+    }
 
-//    PUT/api/accounts/{accountId}/withdrawDebit amount from account→ Notification Service & Transaction Service
+    @Transactional
+    public AccountResponseDTO withdrawDebit(String accountNumber, BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Withdraw amount must be greater than 0");
+        }
+
+        Account account = getAccountEntity(accountNumber);
+        if (account.getBalance().compareTo(amount) < 0) {
+            throw new IllegalArgumentException("Insufficient balance");
+        }
+
+        account.setBalance(account.getBalance().subtract(amount));
+        account.setUpdatedAt(LocalDateTime.now());
+        accountRepository.save(account);
+
+        // Best-effort async transaction logging.
+        TransactionRecordRequestDTO tx = new TransactionRecordRequestDTO();
+        tx.setSourceAccountNumber(account.getAccountId());
+        tx.setDestinationAccountNumber(account.getAccountId());
+        tx.setAmount(amount);
+        tx.setTransactionType("WITHDRAW");
+        tx.setTransactionDescription("Withdraw debit of " + amount);
+        transactionAsyncService.recordTransaction(tx);
+
+        return convertToAccountResponseDTO(account);
+    }
 
 
     public void deleteAccount(UUID accountId) {
