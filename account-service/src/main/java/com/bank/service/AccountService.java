@@ -2,12 +2,12 @@ package com.bank.service;
 
 
 import com.bank.ENUM.AccountStatus;
+import com.bank.config.KafkaConstants;
 import com.bank.config.MapperConfig;
 import com.bank.dto.*;
+import com.bank.event.AccountCreationEvent;
 import com.bank.exception.ResourceNotFoundException;
 import com.bank.feign.CustomerFeignService;
-import com.bank.feign.NotificationFeignService;
-import com.bank.service.TransactionAsyncService;
 import com.bank.model.Account;
 import com.bank.repository.AccountRepository;
 import org.slf4j.Logger;
@@ -17,6 +17,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
@@ -32,7 +33,7 @@ public class AccountService {
 
     private final CustomerFeignService customerFeignService;
 
-    private final NotificationFeignService notificationFeignService;
+
 
     private final TransactionAsyncService transactionAsyncService;
 
@@ -41,20 +42,24 @@ public class AccountService {
     private final MapperConfig mapperConfig;
 
    private  final AccountRepository accountRepository;
+
+   private final KafkaTemplate<String, Object> kafkaTemplate;
    
    private static final AtomicInteger sequenceCounter = new AtomicInteger(1000);
 
 
    public AccountService(AccountRepository accountRepository,
-                          NotificationFeignService notificationFeignService,
+
                           CustomerFeignService customerFeignService,
                           TransactionAsyncService transactionAsyncService,
+                          KafkaTemplate<String, Object> kafkaTemplate,
                           MapperConfig mapperConfig) {
        this.accountRepository = accountRepository;
-       this.notificationFeignService = notificationFeignService;
+
        this.mapperConfig = mapperConfig;
        this.customerFeignService = customerFeignService;
        this.transactionAsyncService = transactionAsyncService;
+       this.kafkaTemplate = kafkaTemplate;
    }
 
    private String generateAccountNumber(String mobileNumber) {
@@ -123,21 +128,27 @@ public class AccountService {
             accountRepository.save(account);
 
             // sending Notification
-            NotificationRequestDTO dto = new NotificationRequestDTO();
-            dto.setCustomerId(accountDto.getCustomerId());
-            dto.setMessage("Account created successfully");
-            dto.setEmail(customerDTO.getEmail());
-            dto.setPhone(customerDTO.getMobileNumber());
-            notificationFeignService.sendNotification(dto);
+
+
+            AccountCreationEvent event = new AccountCreationEvent();
+            event.setAccountNumber(accountNumber);
+            event.setCustomerId(accountDto.getCustomerId());
+            event.setEmail(customerDTO.getEmail());
+            event.setMessage("Account "+accountNumber+" created  successfully");
+            event.setPhoneNumber(customerDTO.getMobileNumber());
+
+            kafkaTemplate.send(KafkaConstants.ACCOUNT_CREATION_TOPIC , accountDto.getCustomerId().toString()  , event);
+
+
 
             // Record initial balance as a DEPOSIT transaction (best-effort / async).
-            TransactionRecordRequestDTO transactionRecordRequestDTO = new TransactionRecordRequestDTO();
+          /*  TransactionRecordRequestDTO transactionRecordRequestDTO = new TransactionRecordRequestDTO();
             transactionRecordRequestDTO.setSourceAccountNumber(account.getAccountId());
             transactionRecordRequestDTO.setDestinationAccountNumber(account.getAccountId());
             transactionRecordRequestDTO.setAmount(accountDto.getBalance());
             transactionRecordRequestDTO.setTransactionType("DEPOSIT");
             transactionRecordRequestDTO.setTransactionDescription("Initial account balance");
-            transactionAsyncService.recordTransaction(transactionRecordRequestDTO);
+            transactionAsyncService.recordTransaction(transactionRecordRequestDTO);*/
         }
         catch(Exception e){
             logger.error("Account Created Successfully but failed to send notification", e);

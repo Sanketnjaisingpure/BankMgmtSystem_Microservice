@@ -1,12 +1,14 @@
 package com.bank.service;
 
 import com.bank.ENUM.ChannelType;
-import com.bank.dto.NotificationRequestDTO;
+import com.bank.config.KafkaConstants;
+import com.bank.event.AccountCreationEvent;
 import com.bank.model.Notification;
 import com.bank.repository.NotificationRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Async;
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -24,15 +26,16 @@ public class NotificationService {
         this.notificationRepository = notificationRepository;
     }
 
-    @Async("notificationExecutor")
-    public void sendAccountCreationNotification(NotificationRequestDTO dto) {
 
-        logger.info("Sending account creation notification for customer: {}", dto.getCustomerId());
+    @KafkaListener(topics = KafkaConstants.ACCOUNT_CREATION_TOPIC , groupId = KafkaConstants.ACCOUNT_CREATION_GROUP)
+    public void sendAccountCreationNotification(AccountCreationEvent event , Acknowledgment ack) {
+
+        logger.info("Sending account creation notification for customer: {}", event.getCustomerId());
 
         Notification notification = new Notification();
-        notification.setCustomerId(dto.getCustomerId());
-        notification.setMessage(dto.getMessage());
-        if (dto.getEmail() != null) {
+        notification.setCustomerId(event.getCustomerId());
+        notification.setMessage(event.getMessage());
+        if (event.getEmail() != null) {
             notification.setChannelType(ChannelType.EMAIL);
         } else {
             notification.setChannelType(ChannelType.SMS);
@@ -40,8 +43,10 @@ public class NotificationService {
         notification.setSentAt(LocalDateTime.now());
         try {
             notification.setStatus("SUCCESS");
-            logger.info("Notification stored for customer {}", dto.getCustomerId());
+            logger.info("Notification stored for customer {}", event.getCustomerId());
             notificationRepository.save(notification);
+
+            ack.acknowledge();
         }
         catch (Exception e) {
             // TODO: handle exception
