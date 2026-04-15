@@ -16,8 +16,8 @@ public class NotificationController {
         this.notificationService = notificationService;
     }
 
-    @PostMapping("/account-create-notification")
+    /*@PostMapping("/account-create-notification")
     public void sendNotification(@RequestBody NotificationRequestDTO dto) {
         notificationService.sendAccountCreationNotification(dto);
-    }
+    }*/
 }

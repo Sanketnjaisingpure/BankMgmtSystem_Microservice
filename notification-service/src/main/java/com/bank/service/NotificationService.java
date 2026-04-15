@@ -45,7 +45,7 @@ public class NotificationService {
             notification.setStatus("SUCCESS");
             logger.info("Notification stored for customer {}", event.getCustomerId());
             notificationRepository.save(notification);
-
+            logger.info("Acknowledging message");
             ack.acknowledge();
         }
         catch (Exception e) {

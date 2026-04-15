@@ -103,9 +103,6 @@ public class AccountService {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to fetch customer");
         }
 
-        if(customerDTO == null){
-            throw new ResourceNotFoundException("Customer Not Found");
-        }
 
         Account account = new Account();
         account.setAccountType(accountDto.getAccountType());
@@ -137,12 +134,14 @@ public class AccountService {
             event.setMessage("Account "+accountNumber+" created  successfully");
             event.setPhoneNumber(customerDTO.getMobileNumber());
 
+
+            logger.info("sending account creation notification via Kafka ");
             kafkaTemplate.send(KafkaConstants.ACCOUNT_CREATION_TOPIC , accountDto.getCustomerId().toString()  , event);
 
 
 
             // Record initial balance as a DEPOSIT transaction (best-effort / async).
-          /*  TransactionRecordRequestDTO transactionRecordRequestDTO = new TransactionRecordRequestDTO();
+          /* TransactionRecordRequestDTO transactionRecordRequestDTO = new TransactionRecordRequestDTO();
             transactionRecordRequestDTO.setSourceAccountNumber(account.getAccountId());
             transactionRecordRequestDTO.setDestinationAccountNumber(account.getAccountId());
             transactionRecordRequestDTO.setAmount(accountDto.getBalance());
