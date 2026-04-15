@@ -13,4 +13,5 @@ public interface CustomerFeignService {
 
     @GetMapping("/api/v1/customers/find-by-id")
     ResponseEntity<CustomerDTO> findById(@RequestParam UUID customerId);
+
 }

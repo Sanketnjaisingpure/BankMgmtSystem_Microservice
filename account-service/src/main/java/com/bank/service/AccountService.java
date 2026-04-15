@@ -2,10 +2,12 @@ package com.bank.service;
 
 
 import com.bank.ENUM.AccountStatus;
+import com.bank.ENUM.TransactionType;
 import com.bank.config.KafkaConstants;
 import com.bank.config.MapperConfig;
 import com.bank.dto.*;
 import com.bank.event.AccountCreationEvent;
+import com.bank.event.TransactionNotificationEvent;
 import com.bank.exception.ResourceNotFoundException;
 import com.bank.feign.CustomerFeignService;
 import com.bank.model.Account;
@@ -33,19 +35,17 @@ public class AccountService {
 
     private final CustomerFeignService customerFeignService;
 
-
-
     private final TransactionAsyncService transactionAsyncService;
 
     private static final Logger logger = LoggerFactory.getLogger(AccountService.class);
 
     private final MapperConfig mapperConfig;
 
-   private  final AccountRepository accountRepository;
+    private  final AccountRepository accountRepository;
 
-   private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
    
-   private static final AtomicInteger sequenceCounter = new AtomicInteger(1000);
+    private static final AtomicInteger sequenceCounter = new AtomicInteger(1000);
 
 
    public AccountService(AccountRepository accountRepository,
@@ -55,7 +55,6 @@ public class AccountService {
                           KafkaTemplate<String, Object> kafkaTemplate,
                           MapperConfig mapperConfig) {
        this.accountRepository = accountRepository;
-
        this.mapperConfig = mapperConfig;
        this.customerFeignService = customerFeignService;
        this.transactionAsyncService = transactionAsyncService;
@@ -79,6 +78,25 @@ public class AccountService {
        return last4Mobile + timestamp4 + sequence4;
    }
 
+   public CustomerDTO getCustomerDetails(UUID customerId) {
+       CustomerDTO customerDTO;
+       try {
+
+           customerDTO = customerFeignService.findById(customerId).getBody();
+
+           if(customerDTO==null){
+               logger.error("Customer Not Found");
+               throw new ResourceNotFoundException("Customer Not Found");
+           }
+           logger.info("customer details fetch successfully !!!");
+       }
+       catch(Exception e){
+           logger.error("Failed to fetch customer", e);
+           throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to fetch customer");
+       }
+       return customerDTO;
+   }
+
 
     public AccountResponseDTO createAccount(AccountRequestDTO accountDto) {
         logger.info("Creating new Account");
@@ -87,22 +105,7 @@ public class AccountService {
             throw new IllegalArgumentException("Balance must be greater than 500");
         }
 
-        CustomerDTO customerDTO;
-        try {
-
-            customerDTO = customerFeignService.findById(accountDto.getCustomerId()).getBody();
-
-            if(customerDTO==null){
-                logger.error("Customer Not Found");
-                throw new ResourceNotFoundException("Customer Not Found");
-            }
-            logger.info("customer details fetch successfully !!!");
-        }
-        catch(Exception e){
-            logger.error("Failed to fetch customer", e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to fetch customer");
-        }
-
+        CustomerDTO customerDTO =  getCustomerDetails(accountDto.getCustomerId());
 
         Account account = new Account();
         account.setAccountType(accountDto.getAccountType());
@@ -132,9 +135,6 @@ public class AccountService {
             event.setCustomerId(accountDto.getCustomerId());
             event.setEmail(customerDTO.getEmail());
             event.setMessage("Account "+accountNumber+" created  successfully");
-            event.setPhoneNumber(customerDTO.getMobileNumber());
-
-
             logger.info("sending account creation notification via Kafka ");
             kafkaTemplate.send(KafkaConstants.ACCOUNT_CREATION_TOPIC , accountDto.getCustomerId().toString()  , event);
 
@@ -227,16 +227,23 @@ public class AccountService {
         Account account = getAccountEntity(accountNumber);
         account.setBalance(account.getBalance().add(amount));
         account.setUpdatedAt(LocalDateTime.now());
-        accountRepository.save(account);
+        try {
 
-        // Best-effort async transaction logging.
-        TransactionRecordRequestDTO tx = new TransactionRecordRequestDTO();
-        tx.setSourceAccountNumber(account.getAccountId());
-        tx.setDestinationAccountNumber(account.getAccountId());
-        tx.setAmount(amount);
-        tx.setTransactionType("DEPOSIT");
-        tx.setTransactionDescription("Deposit credit of " + amount);
-        transactionAsyncService.recordTransaction(tx);
+            accountRepository.save(account);
+            logger.info("Amount Deposited successfully {} to account {}", amount, accountNumber);
+            // Best-effort async transaction logging.
+            logger.info("Logging transaction for deposit of {} to account {}", amount, accountNumber);
+
+            sendTransactionNotification(account, accountNumber, amount, TransactionType.DEPOSIT);
+
+
+            logger.info("Transaction logged successfully");
+        }
+        catch (Exception e) {
+            // TODO: handle exception
+            // transaction should never break logic
+            logger.error("Transaction failed but account updated", e);
+        }
 
         return convertToAccountResponseDTO(account);
     }
@@ -254,16 +261,25 @@ public class AccountService {
 
         account.setBalance(account.getBalance().subtract(amount));
         account.setUpdatedAt(LocalDateTime.now());
-        accountRepository.save(account);
+        try {
+            accountRepository.save(account);
 
+            sendTransactionNotification(account, accountNumber, amount, TransactionType.WITHDRAW);
+
+        }
+        catch (Exception e) {
+            // TODO: handle exception
+            // transaction should never break logic
+            logger.error("Transaction failed but account updated", e);
+        }
         // Best-effort async transaction logging.
-        TransactionRecordRequestDTO tx = new TransactionRecordRequestDTO();
+       /* TransactionRecordRequestDTO tx = new TransactionRecordRequestDTO();
         tx.setSourceAccountNumber(account.getAccountId());
         tx.setDestinationAccountNumber(account.getAccountId());
         tx.setAmount(amount);
         tx.setTransactionType("WITHDRAW");
         tx.setTransactionDescription("Withdraw debit of " + amount);
-        transactionAsyncService.recordTransaction(tx);
+        transactionAsyncService.recordTransaction(tx);*/
 
         return convertToAccountResponseDTO(account);
     }
@@ -285,5 +301,21 @@ public class AccountService {
         return mapperConfig.modelMapper().map(account, AccountResponseDTO.class);
     }
 
+    private void sendTransactionNotification(Account account, String accountNumber, BigDecimal amount, TransactionType transactionType) {
+
+        TransactionNotificationEvent transactionNotificationEvent = new TransactionNotificationEvent();
+        transactionNotificationEvent.setAccountNumber(accountNumber);
+        transactionNotificationEvent.setCustomerId(account.getCustomerId());
+        transactionNotificationEvent.setTransactionType(transactionType);
+        if(transactionType == TransactionType.DEPOSIT){
+            transactionNotificationEvent.setMessage("Amount " + amount + " is deposited in your Account " + accountNumber);
+        }
+        else{
+            transactionNotificationEvent.setMessage("Amount " + amount + " is withdrawn from your Account " + accountNumber);
+        }
+
+        transactionNotificationEvent.setAmount(amount);
+        kafkaTemplate.send(KafkaConstants.TRANSACTION_NOTIFICATION_TOPIC, transactionNotificationEvent);
+    }
 
 }

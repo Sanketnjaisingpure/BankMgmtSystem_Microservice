@@ -5,24 +5,28 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.config.TopicBuilder;
-import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.core.ProducerFactory;
-import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.support.serializer.JsonSerializer;
 
 import java.util.HashMap;
 import java.util.Map;
 
 @Configuration
-public class KafkaConfig {
-
+public class KafkaProducerConfig {
     @Bean
     public NewTopic accountCreationTopic() {
         return TopicBuilder.name(KafkaConstants.ACCOUNT_CREATION_TOPIC)
+                .partitions(2)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic transactionNotificationTopic(){
+        return TopicBuilder.name(KafkaConstants.TRANSACTION_NOTIFICATION_TOPIC)
                 .partitions(2)
                 .replicas(1)
                 .build();
@@ -41,23 +45,4 @@ public class KafkaConfig {
     public KafkaTemplate<String, Object> kafkaTemplate() {
         return new KafkaTemplate<>(producerFactory());
     }
-
-
-//    Acknowledgment done by manually
-    @Bean
-    public ConcurrentKafkaListenerContainerFactory<String, Object> kafkaListenerContainerFactory(
-            ConsumerFactory<String, Object> consumerFactory) {
-
-        ConcurrentKafkaListenerContainerFactory<String, Object> factory =
-                new ConcurrentKafkaListenerContainerFactory<>();
-
-        factory.setConsumerFactory(consumerFactory);
-
-        // 🔥 IMPORTANT
-        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL);
-
-        return factory;
-    }
 }
-
-
