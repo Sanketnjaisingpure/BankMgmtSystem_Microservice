@@ -2,11 +2,13 @@ package com.bank.service;
 
 
 import com.bank.ENUM.AccountStatus;
+import com.bank.ENUM.TransactionStatus;
 import com.bank.ENUM.TransactionType;
 import com.bank.config.KafkaConstants;
 import com.bank.config.MapperConfig;
 import com.bank.dto.*;
 import com.bank.event.AccountCreationEvent;
+import com.bank.event.TransactionEvent;
 import com.bank.event.TransactionNotificationEvent;
 import com.bank.exception.ResourceNotFoundException;
 import com.bank.feign.CustomerFeignService;
@@ -35,8 +37,6 @@ public class AccountService {
 
     private final CustomerFeignService customerFeignService;
 
-    private final TransactionAsyncService transactionAsyncService;
-
     private static final Logger logger = LoggerFactory.getLogger(AccountService.class);
 
     private final MapperConfig mapperConfig;
@@ -49,15 +49,13 @@ public class AccountService {
 
 
    public AccountService(AccountRepository accountRepository,
-
                           CustomerFeignService customerFeignService,
-                          TransactionAsyncService transactionAsyncService,
                           KafkaTemplate<String, Object> kafkaTemplate,
                           MapperConfig mapperConfig) {
        this.accountRepository = accountRepository;
        this.mapperConfig = mapperConfig;
        this.customerFeignService = customerFeignService;
-       this.transactionAsyncService = transactionAsyncService;
+
        this.kafkaTemplate = kafkaTemplate;
    }
 
@@ -99,63 +97,70 @@ public class AccountService {
 
 
     public AccountResponseDTO createAccount(AccountRequestDTO accountDto) {
-        logger.info("Creating new Account");
+        logger.info("Creating new Account for customerId={}", accountDto.getCustomerId());
 
         if(accountDto.getBalance().compareTo(BigDecimal.valueOf(500.0)) <= 0){
+            logger.warn("Account creation failed: Balance {} is not greater than 500", accountDto.getBalance());
             throw new IllegalArgumentException("Balance must be greater than 500");
         }
 
-        CustomerDTO customerDTO =  getCustomerDetails(accountDto.getCustomerId());
+        CustomerDTO customerDTO = getCustomerDetails(accountDto.getCustomerId());
+        logger.info("Fetched customer details for customerId={}", accountDto.getCustomerId());
 
         Account account = new Account();
         account.setAccountType(accountDto.getAccountType());
-
-
         account.setBalance(accountDto.getBalance());
         account.setStatus(AccountStatus.ACTIVE);
-        
-        // Generate unique account number using customer's mobile number
+
         String accountNumber = generateAccountNumber(customerDTO.getMobileNumber());
         account.setAccountNumber(accountNumber);
-        
+        logger.info("Generated accountNumber={} for customerId={}", accountNumber, accountDto.getCustomerId());
+
         account.setBranchName(accountDto.getBranchName());
         account.setIfscCode(accountDto.getIfscCode());
         account.setCustomerId(accountDto.getCustomerId());
         account.setCreatedAt(LocalDateTime.now());
         account.setUpdatedAt(LocalDateTime.now());
-        try{
-            logger.info("account created successfully");
-            accountRepository.save(account);
 
-            // sending Notification
+        try {
+
+            accountRepository.save(account);
+            logger.info("Account saved successfully: accountNumber={}, customerId={}", accountNumber, accountDto.getCustomerId());
+
+            TransactionEvent transactionEvent = createTransactionEvent(accountNumber, accountDto.getBalance());
+            kafkaTemplate.send(KafkaConstants.TRANSACTION_TOPIC, account.getCustomerId().toString(), transactionEvent);
 
 
             AccountCreationEvent event = new AccountCreationEvent();
             event.setAccountNumber(accountNumber);
             event.setCustomerId(accountDto.getCustomerId());
             event.setEmail(customerDTO.getEmail());
-            event.setMessage("Account "+accountNumber+" created  successfully");
-            logger.info("sending account creation notification via Kafka ");
-            kafkaTemplate.send(KafkaConstants.ACCOUNT_CREATION_TOPIC , accountDto.getCustomerId().toString()  , event);
+            event.setMessage("Account " + accountNumber + " created successfully");
 
-
-
-            // Record initial balance as a DEPOSIT transaction (best-effort / async).
-          /* TransactionRecordRequestDTO transactionRecordRequestDTO = new TransactionRecordRequestDTO();
-            transactionRecordRequestDTO.setSourceAccountNumber(account.getAccountId());
-            transactionRecordRequestDTO.setDestinationAccountNumber(account.getAccountId());
-            transactionRecordRequestDTO.setAmount(accountDto.getBalance());
-            transactionRecordRequestDTO.setTransactionType("DEPOSIT");
-            transactionRecordRequestDTO.setTransactionDescription("Initial account balance");
-            transactionAsyncService.recordTransaction(transactionRecordRequestDTO);*/
+            logger.info("Sending account creation notification via Kafka for accountNumber={}", accountNumber);
+            kafkaTemplate.send(KafkaConstants.ACCOUNT_CREATION_TOPIC, accountDto.getCustomerId().toString(), event);
+            logger.info("Account creation notification sent successfully for accountNumber={}", accountNumber);
         }
         catch(Exception e){
-            logger.error("Account Created Successfully but failed to send notification", e);
+            logger.error("Account created but failed to send notification for accountNumber={}", accountNumber, e);
             throw new ResponseStatusException(HttpStatus.CREATED, "Account created successfully but failed to send notification!!!");
         }
+
+        logger.info("Account creation completed successfully: accountNumber={}", accountNumber);
         return convertToAccountResponseDTO(account);
    }
 
+
+    private TransactionEvent createTransactionEvent(String accountNumber, BigDecimal amount) {
+        TransactionEvent transactionEvent = new TransactionEvent();
+        transactionEvent.setTransactionDescription("Account " + accountNumber + " created successfully");
+        transactionEvent.setSourceAccountNumber(accountNumber);
+        transactionEvent.setDestinationAccountNumber(accountNumber);
+        transactionEvent.setAmount(amount);
+        transactionEvent.setTransactionType(TransactionType.DEPOSIT);
+        transactionEvent.setTransactionStatus(TransactionStatus.SUCCESS);
+        return transactionEvent;
+    }
 
     private Account getAccountEntity(String accountNumber) {
 
@@ -191,7 +196,6 @@ public class AccountService {
 
         List<AccountResponseDTO> list = pageAccount.getContent().stream().filter(account -> account.getCustomerId().equals(customerId)).map(this::convertToAccountResponseDTO).toList();
 
-
         return new PageResponse<>(list, pageAccount.getNumber(), pageAccount.getTotalElements(), pageAccount.getTotalPages());
 
     }
@@ -218,69 +222,88 @@ public class AccountService {
         return convertToAccountResponseDTO(account);
     }
 
+
+    private TransactionEvent paymentTransaction(String sourceAccountNumber , String destinationAccountNumber, TransactionType transactionType ,BigDecimal amount ){
+        TransactionEvent transactionEvent = new TransactionEvent();
+        if (transactionType==TransactionType.DEPOSIT){
+            transactionEvent.setTransactionDescription("Deposit");
+        }else{
+            transactionEvent.setTransactionDescription("Withdraw");
+        }
+        transactionEvent.setSourceAccountNumber(sourceAccountNumber);
+        transactionEvent.setDestinationAccountNumber(destinationAccountNumber);
+        transactionEvent.setAmount(amount);
+        transactionEvent.setTransactionType(transactionType);
+        transactionEvent.setTransactionStatus(TransactionStatus.SUCCESS);
+        return transactionEvent;
+    }
+
     @Transactional
     public AccountResponseDTO depositCredit(String accountNumber, BigDecimal amount) {
+        logger.info("Processing deposit: accountNumber={}, amount={}", accountNumber, amount);
+
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            logger.warn("Deposit failed: Invalid amount {} for accountNumber={}", amount, accountNumber);
             throw new IllegalArgumentException("Deposit amount must be greater than 0");
         }
 
         Account account = getAccountEntity(accountNumber);
+        logger.info("Found account: accountNumber={}, currentBalance={}", accountNumber, account.getBalance());
+
         account.setBalance(account.getBalance().add(amount));
         account.setUpdatedAt(LocalDateTime.now());
-        try {
 
+        try {
             accountRepository.save(account);
-            logger.info("Amount Deposited successfully {} to account {}", amount, accountNumber);
-            // Best-effort async transaction logging.
-            logger.info("Logging transaction for deposit of {} to account {}", amount, accountNumber);
+            logger.info("Deposit saved: accountNumber={}, amount={}, newBalance={}", accountNumber, amount, account.getBalance());
 
             sendTransactionNotification(account, accountNumber, amount, TransactionType.DEPOSIT);
+            logger.info("Deposit notification sent: accountNumber={}, amount={}", accountNumber, amount);
 
-
-            logger.info("Transaction logged successfully");
+            TransactionEvent transactionEvent = paymentTransaction(accountNumber, accountNumber, TransactionType.DEPOSIT, amount);
+            kafkaTemplate.send(KafkaConstants.TRANSACTION_PAYMENT_TOPIC, transactionEvent);
         }
         catch (Exception e) {
-            // TODO: handle exception
-            // transaction should never break logic
-            logger.error("Transaction failed but account updated", e);
+            logger.error("Deposit notification failed but account updated: accountNumber={}, amount={}", accountNumber, amount, e);
         }
 
+        logger.info("Deposit completed: accountNumber={}, amount={}", accountNumber, amount);
         return convertToAccountResponseDTO(account);
     }
 
     @Transactional
     public AccountResponseDTO withdrawDebit(String accountNumber, BigDecimal amount) {
+        logger.info("Processing withdrawal: accountNumber={}, amount={}", accountNumber, amount);
+
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            logger.warn("Withdrawal failed: Invalid amount {} for accountNumber={}", amount, accountNumber);
             throw new IllegalArgumentException("Withdraw amount must be greater than 0");
         }
 
         Account account = getAccountEntity(accountNumber);
+        logger.info("Found account: accountNumber={}, currentBalance={}", accountNumber, account.getBalance());
+
         if (account.getBalance().compareTo(amount) < 0) {
+            logger.warn("Withdrawal failed: Insufficient balance for accountNumber={}, requested={}, available={}",
+                    accountNumber, amount, account.getBalance());
             throw new IllegalArgumentException("Insufficient balance");
         }
 
         account.setBalance(account.getBalance().subtract(amount));
         account.setUpdatedAt(LocalDateTime.now());
+
         try {
             accountRepository.save(account);
+            logger.info("Withdrawal saved: accountNumber={}, amount={}, newBalance={}", accountNumber, amount, account.getBalance());
 
             sendTransactionNotification(account, accountNumber, amount, TransactionType.WITHDRAW);
-
+            logger.info("Withdrawal notification sent: accountNumber={}, amount={}", accountNumber, amount);
         }
         catch (Exception e) {
-            // TODO: handle exception
-            // transaction should never break logic
-            logger.error("Transaction failed but account updated", e);
+            logger.error("Withdrawal notification failed but account updated: accountNumber={}, amount={}", accountNumber, amount, e);
         }
-        // Best-effort async transaction logging.
-       /* TransactionRecordRequestDTO tx = new TransactionRecordRequestDTO();
-        tx.setSourceAccountNumber(account.getAccountId());
-        tx.setDestinationAccountNumber(account.getAccountId());
-        tx.setAmount(amount);
-        tx.setTransactionType("WITHDRAW");
-        tx.setTransactionDescription("Withdraw debit of " + amount);
-        transactionAsyncService.recordTransaction(tx);*/
 
+        logger.info("Withdrawal completed: accountNumber={}, amount={}", accountNumber, amount);
         return convertToAccountResponseDTO(account);
     }
 

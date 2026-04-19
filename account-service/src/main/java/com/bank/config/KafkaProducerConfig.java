@@ -33,6 +33,17 @@ public class KafkaProducerConfig {
     }
 
     @Bean
+    public NewTopic transactionTopic(){
+
+        return TopicBuilder.name(KafkaConstants.TRANSACTION_TOPIC)
+                .partitions(2)
+                .replicas(1)
+                .build();
+    }
+
+
+
+    @Bean
     public ProducerFactory<String, Object> producerFactory() {
         Map<String, Object> config = new HashMap<>();
         config.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");

@@ -22,13 +22,6 @@ public class TransactionController {
         this.transactionService = transactionService;
     }
 
-    @PostMapping("/record-transaction")
-    public ResponseEntity<Void> recordTransaction(@RequestBody TransactionRecordRequestDTO requestDTO) {
-        logger.info("Received transaction record request: type={}, amount={}", requestDTO.getTransactionType(),
-                requestDTO.getAmount());
-        transactionService.recordTransaction(requestDTO);
-        // Service method is async; return immediately.
-        return ResponseEntity.accepted().build();
-    }
+
 
 }

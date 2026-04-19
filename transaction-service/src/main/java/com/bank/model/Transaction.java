@@ -33,10 +33,10 @@ public class Transaction {
     private BigDecimal amount;
 
     @NotNull
-    private UUID sourceAccountNumber;
+    private String sourceAccountNumber;
 
     @NotNull
-    private UUID destinationAccountNumber;
+    private String destinationAccountNumber;
 
     @NotNull
     private LocalDateTime createdAt;

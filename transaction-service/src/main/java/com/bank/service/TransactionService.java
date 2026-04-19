@@ -1,13 +1,14 @@
 package com.bank.service;
 
-import com.bank.ENUM.TransactionStatus;
-import com.bank.ENUM.TransactionType;
-import com.bank.dto.TransactionRecordRequestDTO;
+
+import com.bank.config.KafkaConstants;
+import com.bank.event.TransactionEvent;
 import com.bank.model.Transaction;
 import com.bank.repository.TransactionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Async;
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -23,56 +24,81 @@ public class TransactionService {
         this.transactionRepository = transactionRepository;
     }
 
-    @Async("transactionExecutor")
-    public void recordTransaction(TransactionRecordRequestDTO requestDTO) {
-        try {
-            TransactionType transactionType = TransactionType.valueOf(requestDTO.getTransactionType());
+    @KafkaListener(topics = {KafkaConstants.TRANSACTION_TOPIC}, groupId = KafkaConstants.TRANSACTION_GROUP )
+    public void recordTransaction(TransactionEvent event, Acknowledgment ack) {
 
+        logger.info("Received transaction event: type={}, amount={}, sourceAccount={}, destinationAccount={}",
+                event.getTransactionType(),
+                event.getAmount(),
+                event.getSourceAccountNumber(),
+                event.getDestinationAccountNumber());
+
+        try {
             Transaction transaction = new Transaction();
-            transaction.setTransactionType(transactionType);
-            transaction.setTransactionStatus(TransactionStatus.SUCCESS);
-            transaction.setAmount(requestDTO.getAmount());
-            transaction.setSourceAccountNumber(requestDTO.getSourceAccountNumber());
-            transaction.setDestinationAccountNumber(requestDTO.getDestinationAccountNumber());
+            transaction.setTransactionDescription(event.getTransactionDescription());
+            transaction.setTransactionType(event.getTransactionType());
+            transaction.setAmount(event.getAmount());
+            transaction.setSourceAccountNumber(event.getSourceAccountNumber());
+            transaction.setDestinationAccountNumber(event.getDestinationAccountNumber());
             transaction.setCreatedAt(LocalDateTime.now());
-            transaction.setTransactionDescription(
-                    requestDTO.getTransactionDescription() != null
-                            ? requestDTO.getTransactionDescription()
-                            : "Transaction recorded"
-            );
+            transaction.setTransactionStatus(event.getTransactionStatus());
 
             transactionRepository.save(transaction);
 
-            logger.info(
-                    "Transaction recorded: type={}, amount={}, source={}, destination={}",
-                    transactionType,
-                    requestDTO.getAmount(),
-                    requestDTO.getSourceAccountNumber(),
-                    requestDTO.getDestinationAccountNumber()
-            );
+            ack.acknowledge();
+
+            logger.info("Transaction saved successfully: type={}, amount={}, sourceAccount={}",
+                    event.getTransactionType(),
+                    event.getAmount(),
+                    event.getSourceAccountNumber());
+
         } catch (Exception e) {
-            // Best-effort: attempt to save FAILED transaction if request is sufficiently valid.
-            logger.error("Failed to record transaction asynchronously", e);
-            try {
-                TransactionType transactionType = TransactionType.valueOf(requestDTO.getTransactionType());
 
-                Transaction transaction = new Transaction();
-                transaction.setTransactionType(transactionType);
-                transaction.setTransactionStatus(TransactionStatus.FAILED);
-                transaction.setAmount(requestDTO.getAmount());
-                transaction.setSourceAccountNumber(requestDTO.getSourceAccountNumber());
-                transaction.setDestinationAccountNumber(requestDTO.getDestinationAccountNumber());
-                transaction.setCreatedAt(LocalDateTime.now());
-                transaction.setTransactionDescription(
-                        requestDTO.getTransactionDescription() != null
-                                ? requestDTO.getTransactionDescription()
-                                : "Transaction failed: " + e.getMessage()
-                );
-
-                transactionRepository.save(transaction);
-            } catch (Exception ignored) {
-                // Swallow to keep async worker from crashing.
-            }
+            logger.error("Failed to process transaction: type={}, amount={}, sourceAccount={}, error={}",
+                    event.getTransactionType(),
+                    event.getAmount(),
+                    event.getSourceAccountNumber(),
+                    e.getMessage(),
+                    e); // ✅ important: logs full stack trace
         }
     }
+
+    @KafkaListener(topics = KafkaConstants.TRANSACTION_PAYMENT_TOPIC, groupId = KafkaConstants.TRANSACTION_PAYMENT_GROUP)
+    public void recordTransactionForDepositOrWithdrawal(TransactionEvent event, Acknowledgment ack) {
+        logger.info("Received payment transaction event: type={}, amount={}, sourceAccount={}, destinationAccount={}",
+                event.getTransactionType(),
+                event.getAmount(),
+                event.getSourceAccountNumber(),
+                event.getDestinationAccountNumber());
+
+        try {
+            Transaction transaction = new Transaction();
+            transaction.setTransactionDescription(event.getTransactionDescription());
+            transaction.setTransactionType(event.getTransactionType());
+            transaction.setAmount(event.getAmount());
+            transaction.setSourceAccountNumber(event.getSourceAccountNumber());
+            transaction.setDestinationAccountNumber(event.getDestinationAccountNumber());
+            transaction.setCreatedAt(LocalDateTime.now());
+            transaction.setTransactionStatus(event.getTransactionStatus());
+
+            transactionRepository.save(transaction);
+
+            ack.acknowledge();
+
+            logger.info("Payment transaction saved successfully: type={}, amount={}, account={}",
+                    event.getTransactionType(),
+                    event.getAmount(),
+                    event.getSourceAccountNumber());
+
+        } catch (Exception e) {
+            logger.error("Failed to process payment transaction: type={}, amount={}, account={}, error={}",
+                    event.getTransactionType(),
+                    event.getAmount(),
+                    event.getSourceAccountNumber(),
+                    e.getMessage(),
+                    e);
+        }
+    }
+
+
 }

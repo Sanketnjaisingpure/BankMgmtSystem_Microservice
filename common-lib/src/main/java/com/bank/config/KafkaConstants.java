@@ -8,4 +8,12 @@ public class KafkaConstants {
     public static final String TRANSACTION_NOTIFICATION_TOPIC = "transaction-notification-topic";
 
     public static final String TRANSACTION_NOTIFICATION_GROUP = "transaction-notification-group";
+
+    public static final String TRANSACTION_TOPIC = "transaction-topic";
+
+    public static final String TRANSACTION_GROUP = "transaction-group";
+
+    public static final String TRANSACTION_PAYMENT_TOPIC = "transaction-payment-topic";
+
+    public static final String TRANSACTION_PAYMENT_GROUP = "transaction-payment-group";
 }
