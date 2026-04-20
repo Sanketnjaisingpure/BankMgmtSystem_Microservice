@@ -1,24 +1,25 @@
 package com.bank.dto;
 
-import lombok.Data;
+import jakarta.validation.constraints.NotNull;
 
 import java.math.BigDecimal;
 import java.util.UUID;
 
-@Data
-public class TransactionRecordRequestDTO {
 
-    private UUID sourceAccountNumber;
-    private UUID destinationAccountNumber;
+public record TransactionRecordRequestDTO (
 
-    private BigDecimal amount;
+    @NotNull UUID sourceAccountNumber,
 
-    /**
+     @NotNull UUID destinationAccountNumber,
+
+     @NotNull BigDecimal amount,
+
+    /*
      * Must match {@code com.bank.ENUM.TransactionType} values:
      * DEPOSIT, WITHDRAW, TRANSFER
      */
-    private String transactionType;
+     @NotNull String transactionType,
 
-    private String transactionDescription;
+     @NotNull String transactionDescription){
 }
 

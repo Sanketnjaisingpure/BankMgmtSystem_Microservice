@@ -51,6 +51,9 @@ public class CustomerService {
 
     // find customer by id
     public CustomerDTO findById(UUID customerId) {
+        logger.info("Thread: {}, isVirtual: {}",
+                Thread.currentThread().getName(),
+                Thread.currentThread().isVirtual());
         logger.info("Fetching customer by id: {}", customerId);
         Customer customer =  customerRepository.findById(customerId).orElse(null);
         if (customer==null){

@@ -3,28 +3,25 @@ package com.bank.dto;
 
 import com.bank.ENUM.AccountType;
 import jakarta.validation.constraints.NotNull;
-import lombok.Data;
-
 import java.math.BigDecimal;
 import java.util.UUID;
 
-@Data
-public class AccountRequestDTO {
-    @NotNull
-    private UUID customerId;
 
+public record AccountRequestDTO (
     @NotNull
-    private AccountType accountType;
+     UUID customerId,
 
     @NotNull
-    private String ifscCode;
+     AccountType accountType,
 
     @NotNull
-    private String branchName;
+     String ifscCode,
 
     @NotNull
-    private BigDecimal balance;
+     String branchName,
 
-
-
+    @NotNull
+     BigDecimal balance
+    )
+{
 }

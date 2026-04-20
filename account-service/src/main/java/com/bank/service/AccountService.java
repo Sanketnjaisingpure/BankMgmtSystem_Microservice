@@ -97,48 +97,48 @@ public class AccountService {
 
 
     public AccountResponseDTO createAccount(AccountRequestDTO accountDto) {
-        logger.info("Creating new Account for customerId={}", accountDto.getCustomerId());
+        logger.info("Creating new Account for customerId={}", accountDto.customerId());
 
-        if(accountDto.getBalance().compareTo(BigDecimal.valueOf(500.0)) <= 0){
-            logger.warn("Account creation failed: Balance {} is not greater than 500", accountDto.getBalance());
+        if(accountDto.balance().compareTo(BigDecimal.valueOf(500.0)) <= 0){
+            logger.warn("Account creation failed: Balance {} is not greater than 500", accountDto.balance());
             throw new IllegalArgumentException("Balance must be greater than 500");
         }
 
-        CustomerDTO customerDTO = getCustomerDetails(accountDto.getCustomerId());
-        logger.info("Fetched customer details for customerId={}", accountDto.getCustomerId());
+        CustomerDTO customerDTO = getCustomerDetails(accountDto.customerId());
+        logger.info("Fetched customer details for customerId={}", accountDto.customerId());
 
         Account account = new Account();
-        account.setAccountType(accountDto.getAccountType());
-        account.setBalance(accountDto.getBalance());
+        account.setAccountType(accountDto.accountType());
+        account.setBalance(accountDto.balance());
         account.setStatus(AccountStatus.ACTIVE);
 
         String accountNumber = generateAccountNumber(customerDTO.getMobileNumber());
         account.setAccountNumber(accountNumber);
-        logger.info("Generated accountNumber={} for customerId={}", accountNumber, accountDto.getCustomerId());
+        logger.info("Generated accountNumber={} for customerId={}", accountNumber, accountDto.customerId());
 
-        account.setBranchName(accountDto.getBranchName());
-        account.setIfscCode(accountDto.getIfscCode());
-        account.setCustomerId(accountDto.getCustomerId());
+        account.setBranchName(accountDto.branchName());
+        account.setIfscCode(accountDto.ifscCode());
+        account.setCustomerId(accountDto.customerId());
         account.setCreatedAt(LocalDateTime.now());
         account.setUpdatedAt(LocalDateTime.now());
 
         try {
 
             accountRepository.save(account);
-            logger.info("Account saved successfully: accountNumber={}, customerId={}", accountNumber, accountDto.getCustomerId());
+            logger.info("Account saved successfully: accountNumber={}, customerId={}", accountNumber, accountDto.customerId());
 
-            TransactionEvent transactionEvent = createTransactionEvent(accountNumber, accountDto.getBalance());
+            TransactionEvent transactionEvent = createTransactionEvent(accountNumber, accountDto.balance());
             kafkaTemplate.send(KafkaConstants.TRANSACTION_TOPIC, account.getCustomerId().toString(), transactionEvent);
 
 
             AccountCreationEvent event = new AccountCreationEvent();
             event.setAccountNumber(accountNumber);
-            event.setCustomerId(accountDto.getCustomerId());
+            event.setCustomerId(accountDto.customerId());
             event.setEmail(customerDTO.getEmail());
             event.setMessage("Account " + accountNumber + " created successfully");
 
             logger.info("Sending account creation notification via Kafka for accountNumber={}", accountNumber);
-            kafkaTemplate.send(KafkaConstants.ACCOUNT_CREATION_TOPIC, accountDto.getCustomerId().toString(), event);
+            kafkaTemplate.send(KafkaConstants.ACCOUNT_CREATION_TOPIC, accountDto.customerId().toString(), event);
             logger.info("Account creation notification sent successfully for accountNumber={}", accountNumber);
         }
         catch(Exception e){

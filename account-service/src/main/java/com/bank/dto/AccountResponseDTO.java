@@ -3,18 +3,20 @@ package com.bank.dto;
 import com.bank.ENUM.AccountStatus;
 import com.bank.ENUM.AccountType;
 
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.math.BigDecimal;
 
-@Data
-public class AccountResponseDTO {
 
-    private String accountNumber;
+public record AccountResponseDTO (
 
-    private AccountType accountType;
+     @NotNull String accountNumber,
 
-    private AccountStatus status;
+     @NotNull AccountType accountType,
 
-    private BigDecimal balance;
+     @NotNull AccountStatus status,
+
+     @NotNull BigDecimal balance)
+    {
 }
