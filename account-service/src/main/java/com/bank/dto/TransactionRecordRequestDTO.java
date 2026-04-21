@@ -8,18 +8,10 @@ import java.util.UUID;
 
 public record TransactionRecordRequestDTO (
 
-    @NotNull UUID sourceAccountNumber,
+    @NotNull String sourceAccountNumber,
 
-     @NotNull UUID destinationAccountNumber,
+     @NotNull String destinationAccountNumber,
 
-     @NotNull BigDecimal amount,
-
-    /*
-     * Must match {@code com.bank.ENUM.TransactionType} values:
-     * DEPOSIT, WITHDRAW, TRANSFER
-     */
-     @NotNull String transactionType,
-
-     @NotNull String transactionDescription){
+     @NotNull BigDecimal amount){
 }
 

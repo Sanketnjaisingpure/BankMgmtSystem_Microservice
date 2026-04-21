@@ -4,6 +4,7 @@ import com.bank.ENUM.AccountStatus;
 import com.bank.dto.AccountRequestDTO;
 import com.bank.dto.AccountResponseDTO;
 import com.bank.dto.PageResponse;
+import com.bank.dto.TransactionRecordRequestDTO;
 import com.bank.service.AccountService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -94,6 +95,15 @@ public class AccountController {
     ) {
         logger.info("Received Request to withdraw amount={} from accountNumber={}", amount, accountNumber);
         AccountResponseDTO dto = accountService.withdrawDebit(accountNumber, amount);
+        return ResponseEntity.ok(dto);
+    }
+
+    @PutMapping("/transfer-amount")
+    public ResponseEntity<AccountResponseDTO> transferAmount(
+           @RequestBody TransactionRecordRequestDTO transactionRecordRequestDTO
+    ) {
+        logger.info("Received  Request to Transfer Amount from accountNumber = {} to destinationAccountNumber = {} with amount = {} " , transactionRecordRequestDTO.sourceAccountNumber() , transactionRecordRequestDTO.destinationAccountNumber(), transactionRecordRequestDTO.amount());
+        AccountResponseDTO dto = accountService.transferAmount(transactionRecordRequestDTO);
         return ResponseEntity.ok(dto);
     }
 

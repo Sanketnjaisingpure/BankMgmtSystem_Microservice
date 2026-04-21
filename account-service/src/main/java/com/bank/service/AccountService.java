@@ -240,70 +240,239 @@ public class AccountService {
 
     @Transactional
     public AccountResponseDTO depositCredit(String accountNumber, BigDecimal amount) {
+
         logger.info("Processing deposit: accountNumber={}, amount={}", accountNumber, amount);
 
+        // ✅ Step 1: Validation
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
             logger.warn("Deposit failed: Invalid amount {} for accountNumber={}", amount, accountNumber);
             throw new IllegalArgumentException("Deposit amount must be greater than 0");
         }
 
+        // ✅ Step 2: Fetch account
         Account account = getAccountEntity(accountNumber);
-        logger.info("Found account: accountNumber={}, currentBalance={}", accountNumber, account.getBalance());
 
+        logger.info("Account fetched: accountNumber={}, currentBalance={}",
+                accountNumber, account.getBalance());
+
+        // ✅ Step 3: Update balance
         account.setBalance(account.getBalance().add(amount));
         account.setUpdatedAt(LocalDateTime.now());
 
+        // ❗ IMPORTANT: DB save should NOT be inside try-catch
+        accountRepository.save(account);
+
+        logger.info("Deposit persisted successfully: accountNumber={}, newBalance={}",
+                accountNumber, account.getBalance());
+
+        // ✅ Step 4: Non-critical operations (Kafka / Notification)
         try {
-            accountRepository.save(account);
-            logger.info("Deposit saved: accountNumber={}, amount={}, newBalance={}", accountNumber, amount, account.getBalance());
-
+            // Notification
             sendTransactionNotification(account, accountNumber, amount, TransactionType.DEPOSIT);
-            logger.info("Deposit notification sent: accountNumber={}, amount={}", accountNumber, amount);
 
-            TransactionEvent transactionEvent = paymentTransaction(accountNumber, accountNumber, TransactionType.DEPOSIT, amount);
-            kafkaTemplate.send(KafkaConstants.TRANSACTION_PAYMENT_TOPIC, transactionEvent);
-        }
-        catch (Exception e) {
-            logger.error("Deposit notification failed but account updated: accountNumber={}, amount={}", accountNumber, amount, e);
+            // Transaction event
+            TransactionEvent transactionEvent =
+                    paymentTransaction(accountNumber, accountNumber, TransactionType.DEPOSIT, amount);
+
+            kafkaTemplate.send(KafkaConstants.TRANSACTION_PAYMENT_TOPIC, transactionEvent)
+                    .whenComplete((result, ex) -> {
+                        if (ex != null) {
+                            logger.error("Transaction event send failed: accountNumber={}, error={}",
+                                    accountNumber, ex.getMessage(), ex);
+                        } else {
+                            logger.info("Transaction event sent: accountNumber={}, partition={}, offset={}",
+                                    accountNumber,
+                                    result.getRecordMetadata().partition(),
+                                    result.getRecordMetadata().offset());
+                        }
+                    });
+
+        } catch (Exception e) {
+            // ❗ Do NOT fail main transaction
+            logger.error("Post-deposit operations failed (notification/event): accountNumber={}",
+                    accountNumber, e);
         }
 
-        logger.info("Deposit completed: accountNumber={}, amount={}", accountNumber, amount);
+        logger.info("Deposit completed successfully: accountNumber={}, amount={}, finalBalance={}",
+                accountNumber, amount, account.getBalance());
+
         return convertToAccountResponseDTO(account);
     }
 
+
+    // Transfer amount from One account to another
+    @Transactional
+    public AccountResponseDTO transferAmount(TransactionRecordRequestDTO request) {
+
+        logger.info("Processing transfer: sourceAccount={}, destinationAccount={}, amount={}",
+                request.sourceAccountNumber(),
+                request.destinationAccountNumber(),
+                request.amount());
+
+        // ✅ Step 1: Validation
+        if (request.amount() == null || request.amount().compareTo(BigDecimal.ZERO) <= 0) {
+            logger.warn("Transfer failed: Invalid amount {}", request.amount());
+            throw new IllegalArgumentException("Transfer amount must be greater than 0");
+        }
+
+        if (request.sourceAccountNumber().equals(request.destinationAccountNumber())) {
+            logger.warn("Transfer failed: Same source & destination account={}",
+                    request.sourceAccountNumber());
+            throw new IllegalArgumentException("Source and destination account cannot be same");
+        }
+
+        // ✅ Step 2: Fetch accounts
+        Account sourceAccount = getAccountEntity(request.sourceAccountNumber());
+        Account destinationAccount = getAccountEntity(request.destinationAccountNumber());
+
+        logger.info("Accounts fetched: sourceBalance={}, destinationBalance={}",
+                sourceAccount.getBalance(), destinationAccount.getBalance());
+
+        // ✅ Step 3: Balance check
+        if (sourceAccount.getBalance().compareTo(request.amount()) < 0) {
+            logger.warn("Transfer failed: Insufficient balance sourceAccount={}, available={}, requested={}",
+                    request.sourceAccountNumber(),
+                    sourceAccount.getBalance(),
+                    request.amount());
+            throw new IllegalArgumentException("Insufficient balance");
+        }
+
+        // ✅ Step 4: Update balances
+        sourceAccount.setBalance(sourceAccount.getBalance().subtract(request.amount()));
+        destinationAccount.setBalance(destinationAccount.getBalance().add(request.amount()));
+
+        sourceAccount.setUpdatedAt(LocalDateTime.now());
+        destinationAccount.setUpdatedAt(LocalDateTime.now());
+
+        logger.info("Balances updated: sourceNewBalance={}, destinationNewBalance={}",
+                sourceAccount.getBalance(), destinationAccount.getBalance());
+
+        // ❗ Step 5: DB operations (NO try-catch)
+        accountRepository.save(sourceAccount);
+        accountRepository.save(destinationAccount);
+
+        logger.info("Transfer persisted successfully: sourceAccount={}, destinationAccount={}, amount={}",
+                request.sourceAccountNumber(),
+                request.destinationAccountNumber(),
+                request.amount());
+
+        // ✅ Step 6: Non-critical operations (Kafka + Notification)
+        try {
+            // Notifications
+            sendTransactionNotification(sourceAccount,
+                    request.sourceAccountNumber(),
+                    request.amount(),
+                    TransactionType.WITHDRAW);
+
+            sendTransactionNotification(destinationAccount,
+                    request.destinationAccountNumber(),
+                    request.amount(),
+                    TransactionType.DEPOSIT);
+
+            logger.info("Notifications triggered successfully");
+
+            // Kafka event with callback
+            TransactionEvent transactionEvent = paymentTransaction(
+                    sourceAccount.getAccountNumber(),
+                    destinationAccount.getAccountNumber(),
+                    TransactionType.TRANSFER,
+                    request.amount()
+            );
+
+            kafkaTemplate.send(KafkaConstants.TRANSACTION_PAYMENT_TOPIC, transactionEvent)
+                    .whenComplete((result, ex) -> {
+                        if (ex != null) {
+                            logger.error("Transfer event FAILED: sourceAccount={}, destinationAccount={}, error={}",
+                                    request.sourceAccountNumber(),
+                                    request.destinationAccountNumber(),
+                                    ex.getMessage(),
+                                    ex);
+                        } else {
+                            logger.info("Transfer event SUCCESS: sourceAccount={}, destinationAccount={}, partition={}, offset={}",
+                                    request.sourceAccountNumber(),
+                                    request.destinationAccountNumber(),
+                                    result.getRecordMetadata().partition(),
+                                    result.getRecordMetadata().offset());
+                        }
+                    });
+
+        } catch (Exception e) {
+            // ❗ Do NOT rollback DB because of Kafka/notification
+            logger.error("Post-transfer operations failed: sourceAccount={}, destinationAccount={}",
+                    request.sourceAccountNumber(),
+                    request.destinationAccountNumber(),
+                    e);
+        }
+
+        logger.info("Transfer completed successfully: sourceAccount={}, destinationAccount={}, amount={}",
+                request.sourceAccountNumber(),
+                request.destinationAccountNumber(),
+                request.amount());
+
+        return convertToAccountResponseDTO(sourceAccount);
+    }
+
+
     @Transactional
     public AccountResponseDTO withdrawDebit(String accountNumber, BigDecimal amount) {
+
         logger.info("Processing withdrawal: accountNumber={}, amount={}", accountNumber, amount);
 
+        // ✅ Validation
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
             logger.warn("Withdrawal failed: Invalid amount {} for accountNumber={}", amount, accountNumber);
             throw new IllegalArgumentException("Withdraw amount must be greater than 0");
         }
 
         Account account = getAccountEntity(accountNumber);
-        logger.info("Found account: accountNumber={}, currentBalance={}", accountNumber, account.getBalance());
 
+        logger.info("Account fetched: accountNumber={}, currentBalance={}",
+                accountNumber, account.getBalance());
+
+        // ✅ Balance check
         if (account.getBalance().compareTo(amount) < 0) {
-            logger.warn("Withdrawal failed: Insufficient balance for accountNumber={}, requested={}, available={}",
+            logger.warn("Withdrawal failed: Insufficient balance accountNumber={}, requested={}, available={}",
                     accountNumber, amount, account.getBalance());
             throw new IllegalArgumentException("Insufficient balance");
         }
 
+        // ✅ Update balance
         account.setBalance(account.getBalance().subtract(amount));
         account.setUpdatedAt(LocalDateTime.now());
 
+        // ✅ DB operation MUST NOT be inside try-catch
+        accountRepository.save(account);
+
+        logger.info("Withdrawal persisted: accountNumber={}, newBalance={}",
+                accountNumber, account.getBalance());
+
+        // ✅ Kafka / Notification (non-critical)
         try {
-            accountRepository.save(account);
-            logger.info("Withdrawal saved: accountNumber={}, amount={}, newBalance={}", accountNumber, amount, account.getBalance());
-
             sendTransactionNotification(account, accountNumber, amount, TransactionType.WITHDRAW);
-            logger.info("Withdrawal notification sent: accountNumber={}, amount={}", accountNumber, amount);
-        }
-        catch (Exception e) {
-            logger.error("Withdrawal notification failed but account updated: accountNumber={}, amount={}", accountNumber, amount, e);
+
+            TransactionEvent transactionEvent =
+                    paymentTransaction(accountNumber, accountNumber, TransactionType.WITHDRAW, amount);
+
+            kafkaTemplate.send(KafkaConstants.TRANSACTION_PAYMENT_TOPIC, transactionEvent)
+                    .whenComplete((result, ex) -> {
+                        if (ex != null) {
+                            logger.error("Transaction event failed: accountNumber={}, error={}",
+                                    accountNumber, ex.getMessage(), ex);
+                        } else {
+                            logger.info("Transaction event sent: accountNumber={}, offset={}",
+                                    accountNumber,
+                                    result.getRecordMetadata().offset());
+                        }
+                    });
+
+        } catch (Exception e) {
+            logger.error("Post-withdraw operations failed (notification/event): accountNumber={}",
+                    accountNumber, e);
         }
 
-        logger.info("Withdrawal completed: accountNumber={}, amount={}", accountNumber, amount);
+        logger.info("Withdrawal completed successfully: accountNumber={}, amount={}",
+                accountNumber, amount);
+
         return convertToAccountResponseDTO(account);
     }
 
@@ -324,21 +493,72 @@ public class AccountService {
         return mapperConfig.modelMapper().map(account, AccountResponseDTO.class);
     }
 
-    private void sendTransactionNotification(Account account, String accountNumber, BigDecimal amount, TransactionType transactionType) {
+    private void sendTransactionNotification(Account account,
+                                             String accountNumber,
+                                             BigDecimal amount,
+                                             TransactionType transactionType) {
 
-        TransactionNotificationEvent transactionNotificationEvent = new TransactionNotificationEvent();
-        transactionNotificationEvent.setAccountNumber(accountNumber);
-        transactionNotificationEvent.setCustomerId(account.getCustomerId());
-        transactionNotificationEvent.setTransactionType(transactionType);
-        if(transactionType == TransactionType.DEPOSIT){
-            transactionNotificationEvent.setMessage("Amount " + amount + " is deposited in your Account " + accountNumber);
+        logger.info("Preparing transaction notification: accountNumber={}, customerId={}, type={}, amount={}",
+                accountNumber,
+                account.getCustomerId(),
+                transactionType,
+                amount);
+
+        try {
+            // ✅ Build event
+            TransactionNotificationEvent event = buildTransactionNotificationEvent(
+                    account, accountNumber, amount, transactionType
+            );
+
+            logger.debug("Notification event payload prepared: {}", event);
+
+            // ✅ Send to Kafka with callback
+            kafkaTemplate.send(KafkaConstants.TRANSACTION_NOTIFICATION_TOPIC, event)
+                    .whenComplete((result, ex) -> {
+                        if (ex != null) {
+                            logger.error("Failed to send notification event: accountNumber={}, type={}, error={}",
+                                    accountNumber, transactionType, ex.getMessage(), ex);
+                        } else {
+                            logger.info("Notification event sent successfully: accountNumber={}, partition={}, offset={}",
+                                    accountNumber,
+                                    result.getRecordMetadata().partition(),
+                                    result.getRecordMetadata().offset());
+                        }
+                    });
+
+        } catch (Exception e) {
+            // ⚠️ Do NOT break main flow
+            logger.error("Error while preparing/sending notification: accountNumber={}, type={}",
+                    accountNumber, transactionType, e);
         }
-        else{
-            transactionNotificationEvent.setMessage("Amount " + amount + " is withdrawn from your Account " + accountNumber);
+    }
+
+    private TransactionNotificationEvent buildTransactionNotificationEvent(Account account,
+                                                                           String accountNumber,
+                                                                           BigDecimal amount,
+                                                                           TransactionType type) {
+
+        TransactionNotificationEvent event = new TransactionNotificationEvent();
+
+        event.setAccountNumber(accountNumber);
+        event.setCustomerId(account.getCustomerId());
+        event.setTransactionType(type);
+        event.setAmount(amount);
+
+        switch (type) {
+            case DEPOSIT -> event.setMessage(
+                    String.format("Amount %s credited to your account %s", amount, accountNumber)
+            );
+            case WITHDRAW -> event.setMessage(
+                    String.format("Amount %s debited from your account %s", amount, accountNumber)
+            );
+            case TRANSFER -> event.setMessage(
+                    String.format("Amount %s transferred from your account %s", amount, accountNumber)
+            );
+            default -> event.setMessage("Transaction occurred");
         }
 
-        transactionNotificationEvent.setAmount(amount);
-        kafkaTemplate.send(KafkaConstants.TRANSACTION_NOTIFICATION_TOPIC, transactionNotificationEvent);
+        return event;
     }
 
 }

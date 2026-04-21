@@ -9,14 +9,15 @@ import lombok.Data;
 import java.math.BigDecimal;
 
 
-public record AccountResponseDTO (
+@Data
+public class AccountResponseDTO {
 
-     @NotNull String accountNumber,
+     @NotNull private String accountNumber;
 
-     @NotNull AccountType accountType,
+     @NotNull private AccountType accountType;
 
-     @NotNull AccountStatus status,
+     @NotNull private AccountStatus status;
 
-     @NotNull BigDecimal balance)
-    {
+     @NotNull private BigDecimal balance;
+
 }
