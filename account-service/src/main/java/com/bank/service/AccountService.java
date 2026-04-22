@@ -397,7 +397,7 @@ public class AccountService {
                     });
 
         } catch (Exception e) {
-            // ❗ Do NOT rollback DB because of Kafka/notification
+            // ❗ Do NOT roll back DB because of Kafka/notification
             logger.error("Post-transfer operations failed: sourceAccount={}, destinationAccount={}",
                     request.sourceAccountNumber(),
                     request.destinationAccountNumber(),
