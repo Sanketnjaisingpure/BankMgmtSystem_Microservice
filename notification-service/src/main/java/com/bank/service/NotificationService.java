@@ -21,15 +21,9 @@ public class NotificationService {
 
     private final NotificationRepository notificationRepository;
 
-
-
     public NotificationService(NotificationRepository notificationRepository) {
         this.notificationRepository = notificationRepository;
-
     }
-
-
-
 
     @KafkaListener(
             topics = KafkaConstants.ACCOUNT_CREATION_TOPIC,
