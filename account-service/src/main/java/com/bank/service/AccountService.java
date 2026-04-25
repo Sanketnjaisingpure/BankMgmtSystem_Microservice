@@ -13,9 +13,12 @@ import com.bank.event.TransactionNotificationEvent;
 import com.bank.exception.ResourceNotFoundException;
 import com.bank.feign.CustomerFeignService;
 import com.bank.model.Account;
+import com.bank.model.IdempotencyRequest;
 import com.bank.repository.AccountRepository;
+import com.bank.repository.IdempotencyRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -44,15 +47,19 @@ public class AccountService {
     private  final AccountRepository accountRepository;
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
+
+    private final IdempotencyRepository idempotencyRepository;
    
     private static final AtomicInteger sequenceCounter = new AtomicInteger(1000);
 
 
    public AccountService(AccountRepository accountRepository,
                           CustomerFeignService customerFeignService,
+                          IdempotencyRepository idempotencyRepository,
                           KafkaTemplate<String, Object> kafkaTemplate,
                           MapperConfig mapperConfig) {
        this.accountRepository = accountRepository;
+       this.idempotencyRepository =idempotencyRepository;
        this.mapperConfig = mapperConfig;
        this.customerFeignService = customerFeignService;
 
@@ -223,7 +230,7 @@ public class AccountService {
     }
 
 
-    private TransactionEvent paymentTransaction(String sourceAccountNumber , String destinationAccountNumber, TransactionType transactionType ,BigDecimal amount ){
+    private TransactionEvent paymentTransaction(String sourceAccountNumber , String destinationAccountNumber, TransactionType transactionType ,BigDecimal amount,String IdempotencyKey ){
         TransactionEvent transactionEvent = new TransactionEvent();
         if (transactionType==TransactionType.DEPOSIT){
             transactionEvent.setTransactionDescription("Deposit");
@@ -239,7 +246,7 @@ public class AccountService {
     }
 
     @Transactional
-    public AccountResponseDTO depositCredit(String accountNumber, BigDecimal amount) {
+    public AccountResponseDTO depositCredit(String accountNumber, BigDecimal amount, String idempotencyKey) {
 
         logger.info("Processing deposit: accountNumber={}, amount={}", accountNumber, amount);
 
@@ -248,6 +255,26 @@ public class AccountService {
             logger.warn("Deposit failed: Invalid amount {} for accountNumber={}", amount, accountNumber);
             throw new IllegalArgumentException("Deposit amount must be greater than 0");
         }
+
+
+        try {
+            // ✅ Step 1: Insert idempotency key FIRST
+            IdempotencyRequest request = new IdempotencyRequest();
+            request.setIdempotencyKey(idempotencyKey);
+            request.setAccountNumber(accountNumber);
+            request.setStatus("IN_PROGRESS");
+
+            idempotencyRepository.save(request);
+
+        } catch (DataIntegrityViolationException e) {
+            // ❗ Duplicate request
+            logger.warn("Duplicate request detected: key={}", idempotencyKey);
+
+            Account account = getAccountEntity(accountNumber);
+            return convertToAccountResponseDTO(account);
+        }
+
+
 
         // ✅ Step 2: Fetch account
         Account account = getAccountEntity(accountNumber);
@@ -262,6 +289,12 @@ public class AccountService {
         // ❗ IMPORTANT: DB save should NOT be inside try-catch
         accountRepository.save(account);
 
+        IdempotencyRequest request =
+                idempotencyRepository.findByIdempotencyKey(idempotencyKey).get();
+
+        request.setStatus("COMPLETED");
+        idempotencyRepository.save(request);
+
         logger.info("Deposit persisted successfully: accountNumber={}, newBalance={}",
                 accountNumber, account.getBalance());
 
@@ -272,7 +305,7 @@ public class AccountService {
 
             // Transaction event
             TransactionEvent transactionEvent =
-                    paymentTransaction(accountNumber, accountNumber, TransactionType.DEPOSIT, amount);
+                    paymentTransaction(accountNumber, accountNumber, TransactionType.DEPOSIT, amount , idempotencyKey);
 
             kafkaTemplate.send(KafkaConstants.TRANSACTION_PAYMENT_TOPIC, transactionEvent)
                     .whenComplete((result, ex) -> {
@@ -302,7 +335,7 @@ public class AccountService {
 
     // Transfer amount from One account to another
     @Transactional
-    public AccountResponseDTO transferAmount(TransactionRecordRequestDTO request) {
+    public AccountResponseDTO transferAmount(TransactionRecordRequestDTO request,String idempotencyKey) {
 
         logger.info("Processing transfer: sourceAccount={}, destinationAccount={}, amount={}",
                 request.sourceAccountNumber(),
@@ -319,6 +352,23 @@ public class AccountService {
             logger.warn("Transfer failed: Same source & destination account={}",
                     request.sourceAccountNumber());
             throw new IllegalArgumentException("Source and destination account cannot be same");
+        }
+
+        try {
+            // ✅ Step 1: Insert idempotency key FIRST
+            IdempotencyRequest idempotencyRequest = new IdempotencyRequest();
+            idempotencyRequest.setIdempotencyKey(idempotencyKey);
+            idempotencyRequest.setAccountNumber(request.sourceAccountNumber());
+            idempotencyRequest.setStatus("IN_PROGRESS");
+
+            idempotencyRepository.save(idempotencyRequest);
+
+        } catch (DataIntegrityViolationException e) {
+            // ❗ Duplicate request
+            logger.warn("Duplicate request detected: key={}", idempotencyKey);
+
+            Account account = getAccountEntity(request.sourceAccountNumber());
+            return convertToAccountResponseDTO(account);
         }
 
         // ✅ Step 2: Fetch accounts
@@ -351,6 +401,13 @@ public class AccountService {
         accountRepository.save(sourceAccount);
         accountRepository.save(destinationAccount);
 
+
+        IdempotencyRequest idempotencyRequest =
+                idempotencyRepository.findByIdempotencyKey(idempotencyKey).get();
+
+        idempotencyRequest.setStatus("COMPLETED");
+        idempotencyRepository.save(idempotencyRequest);
+
         logger.info("Transfer persisted successfully: sourceAccount={}, destinationAccount={}, amount={}",
                 request.sourceAccountNumber(),
                 request.destinationAccountNumber(),
@@ -376,7 +433,7 @@ public class AccountService {
                     sourceAccount.getAccountNumber(),
                     destinationAccount.getAccountNumber(),
                     TransactionType.TRANSFER,
-                    request.amount()
+                    request.amount(),idempotencyKey
             );
 
             kafkaTemplate.send(KafkaConstants.TRANSACTION_PAYMENT_TOPIC, transactionEvent)
@@ -414,7 +471,7 @@ public class AccountService {
 
 
     @Transactional
-    public AccountResponseDTO withdrawDebit(String accountNumber, BigDecimal amount) {
+    public AccountResponseDTO withdrawDebit(String accountNumber, BigDecimal amount,String idempotencyKey) {
 
         logger.info("Processing withdrawal: accountNumber={}, amount={}", accountNumber, amount);
 
@@ -422,6 +479,24 @@ public class AccountService {
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
             logger.warn("Withdrawal failed: Invalid amount {} for accountNumber={}", amount, accountNumber);
             throw new IllegalArgumentException("Withdraw amount must be greater than 0");
+        }
+
+
+        try {
+            // ✅ Step 1: Insert idempotency key FIRST
+            IdempotencyRequest idempotencyRequest = new IdempotencyRequest();
+            idempotencyRequest.setIdempotencyKey(idempotencyKey);
+            idempotencyRequest.setAccountNumber(accountNumber);
+            idempotencyRequest.setStatus("IN_PROGRESS");
+
+            idempotencyRepository.save(idempotencyRequest);
+
+        } catch (DataIntegrityViolationException e) {
+            // ❗ Duplicate request
+            logger.warn("Duplicate request detected: key={}", idempotencyKey);
+
+            Account account = getAccountEntity(accountNumber);
+            return convertToAccountResponseDTO(account);
         }
 
         Account account = getAccountEntity(accountNumber);
@@ -443,6 +518,12 @@ public class AccountService {
         // ✅ DB operation MUST NOT be inside try-catch
         accountRepository.save(account);
 
+        IdempotencyRequest idempotencyRequest =
+                idempotencyRepository.findByIdempotencyKey(idempotencyKey).get();
+
+        idempotencyRequest.setStatus("COMPLETED");
+        idempotencyRepository.save(idempotencyRequest);
+
         logger.info("Withdrawal persisted: accountNumber={}, newBalance={}",
                 accountNumber, account.getBalance());
 
@@ -451,7 +532,7 @@ public class AccountService {
             sendTransactionNotification(account, accountNumber, amount, TransactionType.WITHDRAW);
 
             TransactionEvent transactionEvent =
-                    paymentTransaction(accountNumber, accountNumber, TransactionType.WITHDRAW, amount);
+                    paymentTransaction(accountNumber, accountNumber, TransactionType.WITHDRAW, amount,idempotencyKey);
 
             kafkaTemplate.send(KafkaConstants.TRANSACTION_PAYMENT_TOPIC, transactionEvent)
                     .whenComplete((result, ex) -> {

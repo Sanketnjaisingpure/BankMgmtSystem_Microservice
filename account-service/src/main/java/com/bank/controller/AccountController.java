@@ -80,30 +80,33 @@ public class AccountController {
 
     @PutMapping("/{accountNumber}/depositCredit")
     public ResponseEntity<AccountResponseDTO> depositCredit(
+            @RequestHeader("Idempotency-key") String idempotencyKey,
             @PathVariable String accountNumber,
             @RequestParam BigDecimal amount
     ) {
         logger.info("Received Request to deposit amount={} to accountNumber={}", amount, accountNumber);
-        AccountResponseDTO dto = accountService.depositCredit(accountNumber, amount);
+        AccountResponseDTO dto = accountService.depositCredit(accountNumber, amount,idempotencyKey);
         return ResponseEntity.ok(dto);
     }
 
     @PutMapping("/{accountNumber}/withdrawDebit")
     public ResponseEntity<AccountResponseDTO> withdrawDebit(
+            @RequestHeader("Idempotency-key") String idempotencyKey,
             @PathVariable String accountNumber,
             @RequestParam BigDecimal amount
     ) {
         logger.info("Received Request to withdraw amount={} from accountNumber={}", amount, accountNumber);
-        AccountResponseDTO dto = accountService.withdrawDebit(accountNumber, amount);
+        AccountResponseDTO dto = accountService.withdrawDebit(accountNumber, amount,idempotencyKey);
         return ResponseEntity.ok(dto);
     }
 
     @PutMapping("/transfer-amount")
     public ResponseEntity<AccountResponseDTO> transferAmount(
+            @RequestHeader ("Idempotency-key") String idempotencyKey,
            @RequestBody TransactionRecordRequestDTO transactionRecordRequestDTO
     ) {
         logger.info("Received  Request to Transfer Amount from accountNumber = {} to destinationAccountNumber = {} with amount = {} " , transactionRecordRequestDTO.sourceAccountNumber() , transactionRecordRequestDTO.destinationAccountNumber(), transactionRecordRequestDTO.amount());
-        AccountResponseDTO dto = accountService.transferAmount(transactionRecordRequestDTO);
+        AccountResponseDTO dto = accountService.transferAmount(transactionRecordRequestDTO,idempotencyKey);
         return ResponseEntity.ok(dto);
     }
 
