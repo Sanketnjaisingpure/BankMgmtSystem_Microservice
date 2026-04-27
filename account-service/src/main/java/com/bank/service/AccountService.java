@@ -248,7 +248,7 @@ public class AccountService {
     @Transactional
     public AccountResponseDTO depositCredit(String accountNumber, BigDecimal amount, String idempotencyKey) {
 
-        logger.info("Processing deposit: accountNumber={}, amount={}", accountNumber, amount);
+        logger.info("Processing deposit: accountNumber={}, amount={}, idempotencyKey={}", accountNumber, amount, idempotencyKey);
 
         // ✅ Step 1: Validation
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
@@ -265,10 +265,11 @@ public class AccountService {
             request.setStatus("IN_PROGRESS");
 
             idempotencyRepository.save(request);
+            logger.info("Idempotency key persisted as IN_PROGRESS: key={}, accountNumber={}", idempotencyKey, accountNumber);
 
         } catch (DataIntegrityViolationException e) {
-            // ❗ Duplicate request
-            logger.warn("Duplicate request detected: key={}", idempotencyKey);
+            // ❗ Duplicate request — return cached result without re-processing
+            logger.warn("Duplicate deposit request detected — returning existing account state: key={}, accountNumber={}", idempotencyKey, accountNumber);
 
             Account account = getAccountEntity(accountNumber);
             return convertToAccountResponseDTO(account);
@@ -294,6 +295,7 @@ public class AccountService {
 
         request.setStatus("COMPLETED");
         idempotencyRepository.save(request);
+        logger.info("Idempotency key marked COMPLETED: key={}, accountNumber={}", idempotencyKey, accountNumber);
 
         logger.info("Deposit persisted successfully: accountNumber={}, newBalance={}",
                 accountNumber, account.getBalance());
@@ -337,10 +339,11 @@ public class AccountService {
     @Transactional
     public AccountResponseDTO transferAmount(TransactionRecordRequestDTO request,String idempotencyKey) {
 
-        logger.info("Processing transfer: sourceAccount={}, destinationAccount={}, amount={}",
+        logger.info("Processing transfer: sourceAccount={}, destinationAccount={}, amount={}, idempotencyKey={}",
                 request.sourceAccountNumber(),
                 request.destinationAccountNumber(),
-                request.amount());
+                request.amount(),
+                idempotencyKey);
 
         // ✅ Step 1: Validation
         if (request.amount() == null || request.amount().compareTo(BigDecimal.ZERO) <= 0) {
@@ -362,10 +365,11 @@ public class AccountService {
             idempotencyRequest.setStatus("IN_PROGRESS");
 
             idempotencyRepository.save(idempotencyRequest);
+            logger.info("Idempotency key persisted as IN_PROGRESS: key={}, sourceAccount={}", idempotencyKey, request.sourceAccountNumber());
 
         } catch (DataIntegrityViolationException e) {
-            // ❗ Duplicate request
-            logger.warn("Duplicate request detected: key={}", idempotencyKey);
+            // ❗ Duplicate request — return cached result without re-processing
+            logger.warn("Duplicate transfer request detected — returning existing account state: key={}, sourceAccount={}", idempotencyKey, request.sourceAccountNumber());
 
             Account account = getAccountEntity(request.sourceAccountNumber());
             return convertToAccountResponseDTO(account);
@@ -407,6 +411,7 @@ public class AccountService {
 
         idempotencyRequest.setStatus("COMPLETED");
         idempotencyRepository.save(idempotencyRequest);
+        logger.info("Idempotency key marked COMPLETED: key={}, sourceAccount={}", idempotencyKey, request.sourceAccountNumber());
 
         logger.info("Transfer persisted successfully: sourceAccount={}, destinationAccount={}, amount={}",
                 request.sourceAccountNumber(),
@@ -473,7 +478,7 @@ public class AccountService {
     @Transactional
     public AccountResponseDTO withdrawDebit(String accountNumber, BigDecimal amount,String idempotencyKey) {
 
-        logger.info("Processing withdrawal: accountNumber={}, amount={}", accountNumber, amount);
+        logger.info("Processing withdrawal: accountNumber={}, amount={}, idempotencyKey={}", accountNumber, amount, idempotencyKey);
 
         // ✅ Validation
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
@@ -490,10 +495,11 @@ public class AccountService {
             idempotencyRequest.setStatus("IN_PROGRESS");
 
             idempotencyRepository.save(idempotencyRequest);
+            logger.info("Idempotency key persisted as IN_PROGRESS: key={}, accountNumber={}", idempotencyKey, accountNumber);
 
         } catch (DataIntegrityViolationException e) {
-            // ❗ Duplicate request
-            logger.warn("Duplicate request detected: key={}", idempotencyKey);
+            // ❗ Duplicate request — return cached result without re-processing
+            logger.warn("Duplicate withdrawal request detected — returning existing account state: key={}, accountNumber={}", idempotencyKey, accountNumber);
 
             Account account = getAccountEntity(accountNumber);
             return convertToAccountResponseDTO(account);
@@ -523,6 +529,7 @@ public class AccountService {
 
         idempotencyRequest.setStatus("COMPLETED");
         idempotencyRepository.save(idempotencyRequest);
+        logger.info("Idempotency key marked COMPLETED: key={}, accountNumber={}", idempotencyKey, accountNumber);
 
         logger.info("Withdrawal persisted: accountNumber={}, newBalance={}",
                 accountNumber, account.getBalance());

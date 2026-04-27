@@ -93,14 +93,16 @@ public class CustomerService {
 
     // update customer Info
 
-    public CustomerDTO updateCustomer( UpdateCustomerDTO updateCustomerDTO){
-        logger.info("Updating customer with email {}" , updateCustomerDTO.getEmail());
+    public CustomerDTO updateCustomer(UpdateCustomerDTO updateCustomerDTO) {
+        logger.info("Updating customer: email={}", updateCustomerDTO.getEmail());
         Customer customer = customerRepository.findByEmail(updateCustomerDTO.getEmail());
 
-        if (customer==null){
-            logger.error("Customer not found with email {}" , updateCustomerDTO.getEmail());
+        if (customer == null) {
+            logger.warn("Update failed — customer not found: email={}", updateCustomerDTO.getEmail());
             throw new ResourceNotFoundException("Customer not found");
         }
+
+        logger.debug("Customer found for update: customerId={}, email={}", customer.getCustomerId(), updateCustomerDTO.getEmail());
 
         try {
             customer.setFirstName(updateCustomerDTO.getFirstName());
@@ -108,46 +110,49 @@ public class CustomerService {
             customer.setMobileNumber(updateCustomerDTO.getMobileNumber());
             customer.setUpdatedAt(LocalDateTime.now());
             customerRepository.save(customer);
-            logger.info("Customer updated successfully with | Mobile number {} | email {}" , updateCustomerDTO.getMobileNumber() , updateCustomerDTO.getEmail());
-
+            logger.info("Customer updated successfully: customerId={}, mobileNumber={}, email={}",
+                    customer.getCustomerId(), updateCustomerDTO.getMobileNumber(), updateCustomerDTO.getEmail());
         }
-        catch (Exception ex){
-            logger.error("Failed to update customer with | Mobile number {} | email {}" , updateCustomerDTO.getMobileNumber() , updateCustomerDTO.getEmail());
+        catch (Exception ex) {
+            logger.error("Failed to update customer: mobileNumber={}, email={}",
+                    updateCustomerDTO.getMobileNumber(), updateCustomerDTO.getEmail(), ex);
             throw new RuntimeException("Failed to update customer");
         }
 
-        return  convertToDTO(customer);
+        return convertToDTO(customer);
     }
 
 
     // delete customer
 
     public void deleteCustomer(UUID customerId) {
-        logger.info("Deleting customer with id {}" , customerId);
+        logger.info("Deleting customer: customerId={}", customerId);
         findById(customerId);
         try {
             customerRepository.deleteById(customerId);
-            logger.error("Customer deleted Successfully | Customer Id {} ", customerId);
+            logger.info("Customer deleted successfully: customerId={}", customerId);
         }
-        catch (Exception ex){
-            logger.error("Failed to delete customer with id {}" , customerId);
+        catch (Exception ex) {
+            logger.error("Failed to delete customer: customerId={}", customerId, ex);
             throw new RuntimeException("Failed to delete customer");
-
         }
     }
 
     // findAll customers
     public PageResponse<CustomerDTO> findAllCustomers(int pageNumber, int pageSize, String sortBy, String order) {
-        logger.info("Fetching all customers");
+        logger.info("Fetching all customers: page={}, size={}, sortBy={}, order={}", pageNumber, pageSize, sortBy, order);
         Sort sort = Sort.by(sortBy).ascending();
-        if(order.equals("desc")){
+        if (order.equals("desc")) {
             sort = Sort.by(sortBy).descending();
         }
-        Pageable pageable = PageRequest.of(pageNumber, pageSize,sort);
+        Pageable pageable = PageRequest.of(pageNumber, pageSize, sort);
 
         Page<Customer> page = customerRepository.findAll(pageable);
 
         List<CustomerDTO> dtoList = page.getContent().stream().map(this::convertToDTO).toList();
+
+        logger.info("Fetched {} customers (page {}/{}, totalRecords={})",
+                dtoList.size(), page.getNumber() + 1, page.getTotalPages(), page.getTotalElements());
 
         return new PageResponse<>(dtoList, page.getNumber(), page.getTotalElements(), page.getTotalPages());
     }
