@@ -11,6 +11,4 @@ import java.util.UUID;
 @Repository
 public interface NotificationRepository extends JpaRepository<Notification , UUID> {
 
-    @Query("SELECT n FROM Notification n WHERE n.status = :status")
-    List<Notification> findByStatus(String status);
 }

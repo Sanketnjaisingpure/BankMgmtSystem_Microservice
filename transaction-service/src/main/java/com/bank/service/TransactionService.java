@@ -7,8 +7,11 @@ import com.bank.model.Transaction;
 import com.bank.repository.TransactionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.kafka.annotation.DltHandler;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.annotation.RetryableTopic;
 import org.springframework.kafka.support.Acknowledgment;
+import org.springframework.retry.annotation.Backoff;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 
@@ -23,6 +26,13 @@ public class TransactionService {
         this.transactionRepository = transactionRepository;
     }
 
+
+  /*  @RetryableTopic(
+            attempts = "3",                              // total attempts = 3 (1 + 2 retries)
+            backoff = @Backoff(delay = 2000, multiplier = 2.0),
+            dltTopicSuffix = "-dlt",                     // <topic>-dlt will be created
+            autoCreateTopics = "true"
+    )*/
     @KafkaListener(
             topics = KafkaConstants.TRANSACTION_TOPIC,
             groupId = KafkaConstants.TRANSACTION_GROUP
@@ -48,6 +58,12 @@ public class TransactionService {
         }
     }
 
+    /*@RetryableTopic(
+            attempts = "3",                              // total attempts = 3 (1 + 2 retries)
+            backoff = @Backoff(delay = 2000, multiplier = 2.0),
+            dltTopicSuffix = "-dlt",                     // <topic>-dlt will be created
+            autoCreateTopics = "true"
+    )*/
     @KafkaListener(
             topics = KafkaConstants.TRANSACTION_PAYMENT_TOPIC,
             groupId = KafkaConstants.TRANSACTION_PAYMENT_GROUP
@@ -82,12 +98,6 @@ public class TransactionService {
                 event.getSourceAccountNumber(),
                 event.getDestinationAccountNumber());
 
-        // ❗ (Optional for now) Idempotency placeholder
-        // if (transactionRepository.existsByTransactionId(event.getTransactionId())) {
-        //     logger.warn("Duplicate transaction detected. Skipping...");
-        //     return;
-        // }
-
         Transaction transaction = new Transaction();
         transaction.setTransactionDescription(event.getTransactionDescription());
         transaction.setTransactionType(event.getTransactionType());
@@ -104,4 +114,17 @@ public class TransactionService {
                 event.getAmount(),
                 event.getSourceAccountNumber());
     }
+
+    /*@DltHandler
+    public void handleDlt(TransactionEvent event) {
+
+        logger.error("DLT received: eventId={}, storing for manual review", event.getEventId());
+
+        FailedTransaction failed = new FailedTransaction();
+        failed.setEventId(event.getEventId());
+        failed.setPayload(event.toString());
+        failed.setFailedAt(LocalDateTime.now());
+
+        failedTransactionRepository.save(failed);
+    }*/
 }

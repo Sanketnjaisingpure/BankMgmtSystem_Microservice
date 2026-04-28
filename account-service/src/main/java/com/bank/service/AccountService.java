@@ -26,6 +26,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -259,12 +260,7 @@ public class AccountService {
 
         try {
             // ✅ Step 1: Insert idempotency key FIRST
-            IdempotencyRequest request = new IdempotencyRequest();
-            request.setIdempotencyKey(idempotencyKey);
-            request.setAccountNumber(accountNumber);
-            request.setStatus("IN_PROGRESS");
-
-            idempotencyRepository.save(request);
+            insertIdempotencyKey(idempotencyKey, accountNumber);
             logger.info("Idempotency key persisted as IN_PROGRESS: key={}, accountNumber={}", idempotencyKey, accountNumber);
 
         } catch (DataIntegrityViolationException e) {
@@ -359,12 +355,8 @@ public class AccountService {
 
         try {
             // ✅ Step 1: Insert idempotency key FIRST
-            IdempotencyRequest idempotencyRequest = new IdempotencyRequest();
-            idempotencyRequest.setIdempotencyKey(idempotencyKey);
-            idempotencyRequest.setAccountNumber(request.sourceAccountNumber());
-            idempotencyRequest.setStatus("IN_PROGRESS");
+            insertIdempotencyKey(idempotencyKey, request.sourceAccountNumber());
 
-            idempotencyRepository.save(idempotencyRequest);
             logger.info("Idempotency key persisted as IN_PROGRESS: key={}, sourceAccount={}", idempotencyKey, request.sourceAccountNumber());
 
         } catch (DataIntegrityViolationException e) {
@@ -474,6 +466,17 @@ public class AccountService {
         return convertToAccountResponseDTO(sourceAccount);
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void insertIdempotencyKey(String key, String accountNumber) {
+
+        IdempotencyRequest req = new IdempotencyRequest();
+        req.setIdempotencyKey(key);
+        req.setAccountNumber(accountNumber);
+        req.setStatus("IN_PROGRESS");
+
+        idempotencyRepository.save(req);
+    }
+
 
     @Transactional
     public AccountResponseDTO withdrawDebit(String accountNumber, BigDecimal amount,String idempotencyKey) {
@@ -489,12 +492,9 @@ public class AccountService {
 
         try {
             // ✅ Step 1: Insert idempotency key FIRST
-            IdempotencyRequest idempotencyRequest = new IdempotencyRequest();
-            idempotencyRequest.setIdempotencyKey(idempotencyKey);
-            idempotencyRequest.setAccountNumber(accountNumber);
-            idempotencyRequest.setStatus("IN_PROGRESS");
+            insertIdempotencyKey(idempotencyKey, accountNumber);
 
-            idempotencyRepository.save(idempotencyRequest);
+
             logger.info("Idempotency key persisted as IN_PROGRESS: key={}, accountNumber={}", idempotencyKey, accountNumber);
 
         } catch (DataIntegrityViolationException e) {
