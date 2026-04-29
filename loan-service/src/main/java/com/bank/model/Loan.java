@@ -1,11 +1,12 @@
 package com.bank.model;
 
 
-import com.bank.dto.LoanStatus;
+import com.bank.ENUM.LoanStatus;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -19,19 +20,20 @@ public class Loan {
     @Id
     private UUID loanId;
 
+
     private UUID customerId;
 
     private String accountNumber;
 
-    private Double loanAmount;
+    private BigDecimal loanAmount;
 
     private Double interestRate;
 
-    private Double emiAmount;
+    private BigDecimal emiAmount;
 
     private LoanStatus loanStatus;
 
-    private int tenureMonths;
+    private Integer tenureMonths;
 
     private LocalDateTime createdAt;
 

@@ -111,9 +111,9 @@ public class AccountService {
             logger.warn("Account creation failed: Balance {} is not greater than 500", accountDto.balance());
             throw new IllegalArgumentException("Balance must be greater than 500");
         }
-
-        CustomerDTO customerDTO = getCustomerDetails(accountDto.customerId());
         logger.info("Fetched customer details for customerId={}", accountDto.customerId());
+        CustomerDTO customerDTO = getCustomerDetails(accountDto.customerId());
+
 
         Account account = new Account();
         account.setAccountType(accountDto.accountType());
@@ -130,10 +130,11 @@ public class AccountService {
         account.setCreatedAt(LocalDateTime.now());
         account.setUpdatedAt(LocalDateTime.now());
 
-        try {
+        accountRepository.save(account);
+        logger.info("Account saved successfully: accountNumber={}, customerId={}", accountNumber, accountDto.customerId());
 
-            accountRepository.save(account);
-            logger.info("Account saved successfully: accountNumber={}, customerId={}", accountNumber, accountDto.customerId());
+
+        try {
 
             TransactionEvent transactionEvent = createTransactionEvent(accountNumber, accountDto.balance());
             kafkaTemplate.send(KafkaConstants.TRANSACTION_TOPIC, account.getCustomerId().toString(), transactionEvent);

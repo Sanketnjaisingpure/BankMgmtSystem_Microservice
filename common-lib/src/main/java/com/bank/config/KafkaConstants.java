@@ -16,4 +16,16 @@ public class KafkaConstants {
     public static final String TRANSACTION_PAYMENT_TOPIC = "transaction-payment-topic";
 
     public static final String TRANSACTION_PAYMENT_GROUP = "transaction-payment-group";
+
+    public static final String LOAN_APPLICATION_TOPIC = "loan-application-topic";
+
+    public static final String LOAN_APPLICATION_GROUP = "loan-application-group";
+
+    public static final String LOAN_STATUS_TOPIC = "loan-status-topic";
+
+    public static final String LOAN_STATUS_GROUP = "loan-status-group";
+
+    public static final String LOAN_DISBURSEMENT_TOPIC = "loan-disbursement-topic";
+
+    public static final String LOAN_DISBURSEMENT_GROUP = "loan-disbursement-group";
 }

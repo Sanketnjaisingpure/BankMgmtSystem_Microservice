@@ -74,6 +74,78 @@ public class NotificationService {
         }
     }
 
+    @KafkaListener(
+            topics = KafkaConstants.LOAN_APPLICATION_TOPIC,
+            groupId = KafkaConstants.LOAN_APPLICATION_GROUP
+    )
+    public void sendLoanApplicationNotification(com.bank.event.LoanApplicationEvent event,
+                                                Acknowledgment ack) {
+
+        logger.info("Received LOAN_APPLICATION event: customerId={}, amount={}",
+                event.getCustomerId(), event.getLoanAmount());
+
+        try {
+            processNotification(event.getCustomerId(), event.getMessage());
+
+            ack.acknowledge();
+            logger.info("ACK success: LOAN_APPLICATION customerId={}", event.getCustomerId());
+
+        } catch (Exception e) {
+            logger.error("Failed to process LOAN_APPLICATION event: customerId={}",
+                    event.getCustomerId(), e);
+
+            // ❗ No ACK → retry will happen
+        }
+    }
+
+    @KafkaListener(
+            topics = KafkaConstants.LOAN_STATUS_TOPIC,
+            groupId = KafkaConstants.LOAN_STATUS_GROUP
+    )
+    public void sendLoanStatusNotification(com.bank.event.LoanStatusEvent event,
+                                           Acknowledgment ack) {
+
+        logger.info("Received LOAN_STATUS event: loanId={}, customerId={}, status={}",
+                event.getLoanId(), event.getCustomerId(), event.getStatus());
+
+        try {
+            processNotification(event.getCustomerId(), event.getMessage());
+
+            ack.acknowledge();
+            logger.info("ACK success: LOAN_STATUS loanId={}", event.getLoanId());
+
+        } catch (Exception e) {
+            logger.error("Failed to process LOAN_STATUS event: loanId={}",
+                    event.getLoanId(), e);
+
+            // ❗ No ACK → retry will happen
+        }
+    }
+
+    @KafkaListener(
+            topics = KafkaConstants.LOAN_DISBURSEMENT_TOPIC,
+            groupId = KafkaConstants.LOAN_DISBURSEMENT_GROUP
+    )
+    public void sendLoanDisbursementNotification(com.bank.event.LoanDisbursementEvent event,
+                                                 Acknowledgment ack) {
+
+        logger.info("Received LOAN_DISBURSEMENT event: loanId={}, customerId={}, amount={}",
+                event.getLoanId(), event.getCustomerId(), event.getAmount());
+
+        try {
+            processNotification(event.getCustomerId(), event.getMessage());
+
+            ack.acknowledge();
+            logger.info("ACK success: LOAN_DISBURSEMENT loanId={}", event.getLoanId());
+
+        } catch (Exception e) {
+            logger.error("Failed to process LOAN_DISBURSEMENT event: loanId={}",
+                    event.getLoanId(), e);
+
+            // ❗ No ACK → retry will happen
+        }
+    }
+
     private void processNotification(UUID customerId, String message) {
 
         logger.info("Processing notification: customerId={}", customerId);

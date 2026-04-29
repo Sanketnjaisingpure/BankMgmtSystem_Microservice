@@ -9,6 +9,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  *
  */
 @SpringBootApplication
+@EnableFeignClients
 @EnableAutoConfiguration
 public class App 
 {

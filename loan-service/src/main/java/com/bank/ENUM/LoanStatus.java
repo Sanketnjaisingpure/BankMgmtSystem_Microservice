@@ -1,4 +1,4 @@
-package com.bank.dto;
+package com.bank.ENUM;
 
 public enum LoanStatus {
     PENDING,
