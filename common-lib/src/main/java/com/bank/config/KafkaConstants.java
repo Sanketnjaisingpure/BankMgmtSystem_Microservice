@@ -28,4 +28,18 @@ public class KafkaConstants {
     public static final String LOAN_DISBURSEMENT_TOPIC = "loan-disbursement-topic";
 
     public static final String LOAN_DISBURSEMENT_GROUP = "loan-disbursement-group";
+
+    // ── Credit Card Service ──
+
+    public static final String CREDIT_CARD_APPLICATION_TOPIC = "credit-card-application-topic";
+
+    public static final String CREDIT_CARD_APPLICATION_GROUP = "credit-card-application-group";
+
+    public static final String CREDIT_CARD_STATUS_TOPIC = "credit-card-status-topic";
+
+    public static final String CREDIT_CARD_STATUS_GROUP = "credit-card-status-group";
+
+    public static final String CREDIT_CARD_TRANSACTION_TOPIC = "credit-card-transaction-topic";
+
+    public static final String CREDIT_CARD_TRANSACTION_GROUP = "credit-card-transaction-group";
 }
