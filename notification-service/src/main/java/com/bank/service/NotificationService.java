@@ -81,8 +81,8 @@ public class NotificationService {
     public void sendLoanApplicationNotification(com.bank.event.LoanApplicationEvent event,
                                                 Acknowledgment ack) {
 
-        logger.info("Received LOAN_APPLICATION event: customerId={}, amount={}",
-                event.getCustomerId(), event.getLoanAmount());
+        logger.info("Received LOAN_APPLICATION event: Event :{} ",
+                event.getMessage());
 
         try {
             processNotification(event.getCustomerId(), event.getMessage());
@@ -129,18 +129,17 @@ public class NotificationService {
     public void sendLoanDisbursementNotification(com.bank.event.LoanDisbursementEvent event,
                                                  Acknowledgment ack) {
 
-        logger.info("Received LOAN_DISBURSEMENT event: loanId={}, customerId={}, amount={}",
-                event.getLoanId(), event.getCustomerId(), event.getAmount());
+        logger.info("Received LOAN_DISBURSEMENT event: {}" ,event.getMessage());
 
         try {
             processNotification(event.getCustomerId(), event.getMessage());
 
             ack.acknowledge();
-            logger.info("ACK success: LOAN_DISBURSEMENT loanId={}", event.getLoanId());
+            logger.info("ACK success: LOAN_DISBURSEMENT customer Account Number ={}", event.getAccountNumber());
 
         } catch (Exception e) {
-            logger.error("Failed to process LOAN_DISBURSEMENT event: loanId={}",
-                    event.getLoanId(), e);
+            logger.error("Failed to process LOAN_DISBURSEMENT event: customer Account Number {}",
+                    event.getAccountNumber(), e);
 
             // ❗ No ACK → retry will happen
         }

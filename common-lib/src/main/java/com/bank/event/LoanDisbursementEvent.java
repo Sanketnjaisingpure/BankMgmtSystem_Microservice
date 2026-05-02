@@ -11,9 +11,8 @@ import java.util.UUID;
 @AllArgsConstructor
 @NoArgsConstructor
 public class LoanDisbursementEvent {
-    private UUID loanId;
     private UUID customerId;
     private String accountNumber;
-    private BigDecimal amount;
+    private String  email;
     private String message;
 }

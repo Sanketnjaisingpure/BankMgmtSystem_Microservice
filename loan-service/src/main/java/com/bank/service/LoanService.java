@@ -17,17 +17,36 @@ import com.bank.repository.LoanRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+/**
+ * Core service handling the full loan lifecycle:
+ * Apply → Approve/Reject → Disburse.
+ *
+ * <p><b>Loan State Machine:</b></p>
+ * <pre>
+ *   PENDING ──→ APPROVED ──→ ACTIVE (disbursed)
+ *      │
+ *      └──→ REJECTED
+ * </pre>
+ *
+ * <p><b>Cross-service interactions:</b></p>
+ * <ul>
+ *   <li>Customer Service (Feign) — validates customer existence</li>
+ *   <li>Account Service (Feign)  — validates account existence and ownership</li>
+ *   <li>Kafka                    — publishes loan application, status, and disbursement events</li>
+ * </ul>
+ *
+ * <p>Kafka events are fire-and-forget; failures are logged but never
+ * block or roll back the database transaction.</p>
+ */
 @Service
 public class LoanService {
 
@@ -38,6 +57,7 @@ public class LoanService {
     private final LoanRepository loanRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
+    /** Default annual interest rate (%), configurable via application properties. */
     @Value("${loan.default.interest-rate:12.5}")
     private Double defaultInterestRate;
 
@@ -51,34 +71,52 @@ public class LoanService {
         this.kafkaTemplate = kafkaTemplate;
     }
 
-    // ─────────────────────────────────────────────────
-    // Apply Loan
-    // ─────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════
+    //  Apply Loan
+    // ═══════════════════════════════════════════════════
 
+    /**
+     * Creates a new loan application in {@link LoanStatus#PENDING} state.
+     *
+     * <p><b>Workflow:</b></p>
+     * <ol>
+     *   <li>Fetch and validate the customer via Customer Service</li>
+     *   <li>Fetch and validate the account via Account Service</li>
+     *   <li>Cross-validate that the account belongs to the requesting customer</li>
+     *   <li>Persist the loan with status PENDING (EMI is calculated later at approval)</li>
+     *   <li>Publish a {@code LOAN_APPLICATION} Kafka event for notification</li>
+     * </ol>
+     *
+     * @param loanRequestDTO the loan application request payload
+     * @return the created loan details
+     * @throws ResourceNotFoundException if the customer or account does not exist
+     * @throws IllegalArgumentException  if the account does not belong to the customer
+     */
     @Transactional
     public LoanResponseDTO applyLoan(LoanRequestDTO loanRequestDTO) {
         logger.info("applyLoan started: customerId={}, accountNumber={}, amount={}",
                 loanRequestDTO.customerId(), loanRequestDTO.accountNumber(), loanRequestDTO.loanAmount());
 
-        // Validate customer
+        // Step 1: Validate that the customer exists in Customer Service
         CustomerDTO customer = getCustomerDetails(loanRequestDTO.customerId());
-        logger.info("Customer fetched: customerId={}, name={} {}",
+        logger.debug("Customer validated: customerId={}, name={} {}",
                 loanRequestDTO.customerId(), customer.getFirstName(), customer.getLastName());
 
-        // Validate account
+        // Step 2: Validate that the account exists in Account Service
         AccountResponseDTO account = getAccountDetails(loanRequestDTO.accountNumber());
-        logger.info("Account fetched: accountNumber={}, customerId={}",
+        logger.debug("Account validated: accountNumber={}, accountOwnerId={}",
                 loanRequestDTO.accountNumber(), account.getCustomerId());
 
-        // Cross-validate ownership
+        // Step 3: Cross-validate ownership — the account must belong to the requesting customer
         if (!account.getCustomerId().equals(loanRequestDTO.customerId())) {
             logger.error("Ownership mismatch: requestCustomerId={} vs accountOwnerId={}",
                     loanRequestDTO.customerId(), account.getCustomerId());
             throw new IllegalArgumentException("Customer ID does not match the Account owner");
         }
-        logger.info("Ownership validated: customerId={}", loanRequestDTO.customerId());
+        logger.debug("Ownership cross-validation passed for customerId={}", loanRequestDTO.customerId());
 
-        // Build loan
+        // Step 4: Build and persist the loan entity
+        // EMI calculation is deferred to the approval step to keep application fast
         Loan loan = new Loan();
         loan.setLoanId(UUID.randomUUID());
         loan.setCustomerId(loanRequestDTO.customerId());
@@ -90,54 +128,81 @@ public class LoanService {
         loan.setCreatedAt(LocalDateTime.now());
         loan.setUpdatedAt(LocalDateTime.now());
 
-        // EMI calculation deferred to approval — set null for now
-        logger.debug("Loan initialized: loanId={}, interestRate={}", loan.getLoanId(), loan.getInterestRate());
-
-        // Save (any DB error will propagate naturally - no swallowing)
         loanRepository.save(loan);
-        logger.info("Loan saved: loanId={}", loan.getLoanId());
+        logger.info("Loan application saved: loanId={}, status={}", loan.getLoanId(), loan.getLoanStatus());
 
-        // Kafka — non-critical, isolated try-catch so DB transaction is not affected
-        sendApplicationEvent(loan, loanRequestDTO.loanAmount());
+        // Step 5: Publish Kafka event (non-critical — failure won't roll back the DB transaction)
+        sendApplicationEvent(loan, customer.getEmail(), loanRequestDTO.loanAmount());
 
         return toResponseDTO(loan);
     }
 
-    // ─────────────────────────────────────────────────
-    // Approve Loan  (EMI calculated here)
-    // ─────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════
+    //  Approve Loan (EMI calculated here)
+    // ═══════════════════════════════════════════════════
 
+    /**
+     * Approves a {@link LoanStatus#PENDING} loan and computes its EMI.
+     *
+     * <p><b>Workflow:</b></p>
+     * <ol>
+     *   <li>Fetch the loan and validate it is in PENDING status</li>
+     *   <li>Calculate EMI using the standard reducing-balance formula</li>
+     *   <li>Transition status to APPROVED and persist</li>
+     *   <li>Publish a {@code LOAN_STATUS} Kafka event</li>
+     * </ol>
+     *
+     * @param loanId the UUID of the loan to approve
+     * @return the updated loan details including the computed EMI
+     * @throws ResourceNotFoundException if the loan does not exist
+     * @throws IllegalStateException     if the loan is not in PENDING status
+     */
     @Transactional
     public LoanResponseDTO approveLoan(UUID loanId) {
         logger.info("approveLoan started: loanId={}", loanId);
 
+        // Step 1: Fetch loan and guard against invalid state transitions
         Loan loan = fetchLoan(loanId);
         validateStatus(loan, LoanStatus.PENDING, "approve");
 
-        // Calculate and set EMI at approval time
+        // Step 2: Calculate EMI at approval time (not at application time)
         BigDecimal emi = calculateEMI(
                 loan.getLoanAmount(),
                 BigDecimal.valueOf(loan.getInterestRate()),
                 loan.getTenureMonths()
         );
+
+        // Step 3: Update loan state
         loan.setEmiAmount(emi);
         loan.setLoanStatus(LoanStatus.APPROVED);
         loan.setUpdatedAt(LocalDateTime.now());
-        logger.info("Loan approved: loanId={}, emiAmount={}", loanId, emi);
 
         loanRepository.save(loan);
+        logger.info("Loan approved: loanId={}, emiAmount={}, interestRate={}%, tenureMonths={}",
+                loanId, emi, loan.getInterestRate(), loan.getTenureMonths());
 
-        // Kafka — non-critical
-        sendStatusEvent(loan, LoanStatus.APPROVED,
+        // Step 4: Notify via Kafka (non-critical)
+        sendStatusEvent(loan, "APPROVED",
                 "Your loan with ID " + loanId + " has been APPROVED. EMI: " + emi);
 
         return toResponseDTO(loan);
     }
 
-    // ─────────────────────────────────────────────────
-    // Reject Loan
-    // ─────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════
+    //  Reject Loan
+    // ═══════════════════════════════════════════════════
 
+    /**
+     * Rejects a {@link LoanStatus#PENDING} loan application.
+     *
+     * <p>Only loans in PENDING status can be rejected. Already approved,
+     * active, or previously rejected loans will cause an {@link IllegalStateException}.</p>
+     *
+     * @param loanId the UUID of the loan to reject
+     * @return the updated loan details
+     * @throws ResourceNotFoundException if the loan does not exist
+     * @throws IllegalStateException     if the loan is not in PENDING status
+     */
     @Transactional
     public LoanResponseDTO rejectLoan(UUID loanId) {
         logger.info("rejectLoan started: loanId={}", loanId);
@@ -151,55 +216,125 @@ public class LoanService {
         loanRepository.save(loan);
         logger.info("Loan rejected: loanId={}", loanId);
 
-        sendStatusEvent(loan, LoanStatus.REJECTED,
+        // Notify the customer via Kafka
+        sendStatusEvent(loan, "REJECTED",
                 "Your loan application with ID " + loanId + " has been REJECTED.");
 
         return toResponseDTO(loan);
     }
 
-    // ─────────────────────────────────────────────────
-    // Disburse Loan
-    // ─────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════
+    //  Disburse Loan
+    // ═══════════════════════════════════════════════════
 
+    /**
+     * Disburses an {@link LoanStatus#APPROVED} loan, transitioning it to {@link LoanStatus#ACTIVE}.
+     *
+     * <p>Includes a safety check ensuring the EMI was properly computed during approval.
+     * If EMI is missing or zero, disbursement is blocked to prevent data inconsistency.</p>
+     *
+     * @param loanId the UUID of the loan to disburse
+     * @return the updated loan details
+     * @throws ResourceNotFoundException if the loan does not exist
+     * @throws IllegalStateException     if the loan is not APPROVED or EMI is invalid
+     */
     @Transactional
     public LoanResponseDTO disburseLoan(UUID loanId) {
         logger.info("disburseLoan started: loanId={}", loanId);
 
+        // Step 1: Fetch loan and validate it is in APPROVED status
         Loan loan = fetchLoan(loanId);
         validateStatus(loan, LoanStatus.APPROVED, "disburse");
 
+        // Step 2: Safety check — EMI must have been computed during approval
         if (loan.getEmiAmount() == null || loan.getEmiAmount().compareTo(BigDecimal.ZERO) <= 0) {
-            logger.error("Disbursement safety check failed: emiAmount is missing or zero for loanId={}", loanId);
-            throw new IllegalStateException("Loan cannot be disbursed: EMI amount not computed. Please re-approve the loan.");
+            logger.error("Disbursement blocked — EMI is missing or zero: loanId={}, emiAmount={}",
+                    loanId, loan.getEmiAmount());
+            throw new IllegalStateException(
+                    "Loan cannot be disbursed: EMI amount not computed. Please re-approve the loan.");
         }
 
+        // Step 3: Credit the loan amount to the customer's account via Account Service
+        // Using loanId as the idempotency key to prevent duplicate credits on retries
+        try {
+            logger.info("Crediting loan amount to account: loanId={}, accountNumber={}, amount={}",
+                    loanId, loan.getAccountNumber(), loan.getLoanAmount());
+
+            accountFeignService.depositCredit(
+                    loanId.toString(),
+                    loan.getAccountNumber(),
+                    loan.getLoanAmount()
+            );
+
+            logger.info("Loan amount credited successfully: loanId={}, accountNumber={}",
+                    loanId, loan.getAccountNumber());
+        } catch (Exception ex) {
+            // If the deposit fails, do NOT mark the loan as ACTIVE — let @Transactional roll back
+            logger.error("Failed to credit loan amount to account: loanId={}, accountNumber={}, error={}",
+                    loanId, loan.getAccountNumber(), ex.getMessage(), ex);
+            throw new IllegalStateException(
+                    "Loan disbursement failed: unable to credit amount to account " + loan.getAccountNumber(), ex);
+        }
+
+        // Step 4: Mark loan as ACTIVE only after successful fund transfer
         loan.setLoanStatus(LoanStatus.ACTIVE);
         loan.setUpdatedAt(LocalDateTime.now());
 
         loanRepository.save(loan);
-        logger.info("Loan disbursed and set ACTIVE: loanId={}, amount={}", loanId, loan.getLoanAmount());
+        logger.info("Loan disbursed and set ACTIVE: loanId={}, amount={}, accountNumber={}",
+                loanId, loan.getLoanAmount(), loan.getAccountNumber());
 
+        // Step 5: Publish disbursement Kafka event for notification
         sendDisbursementEvent(loan);
 
         return toResponseDTO(loan);
     }
 
-    // ─────────────────────────────────────────────────
-    // Get Loan
-    // ─────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════
+    //  Get Loan
+    // ═══════════════════════════════════════════════════
 
+    /**
+     * Retrieves a loan by its ID.
+     *
+     * @param loanId the UUID of the loan to fetch
+     * @return the loan details
+     * @throws ResourceNotFoundException if the loan does not exist
+     */
     public LoanResponseDTO getLoan(UUID loanId) {
         logger.info("getLoan: loanId={}", loanId);
         Loan loan = fetchLoan(loanId);
         return toResponseDTO(loan);
     }
 
-    // ─────────────────────────────────────────────────
-    // EMI Calculation
-    // ─────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════
+    //  EMI Calculation
+    // ═══════════════════════════════════════════════════
 
+    /**
+     * Calculates the Equated Monthly Instalment (EMI) using the standard
+     * reducing-balance formula:
+     *
+     * <pre>
+     *   EMI = P × r × (1 + r)^n / ((1 + r)^n − 1)
+     *
+     *   where:
+     *     P = principal loan amount
+     *     r = monthly interest rate  (annualRate / 12 / 100)
+     *     n = tenure in months
+     * </pre>
+     *
+     * <p>If the annual interest rate is zero (interest-free loan),
+     * EMI is simply {@code principal / months}.</p>
+     *
+     * @param principal  the loan principal amount (must be &gt; 0)
+     * @param annualRate the annual interest rate as a percentage (e.g., 12.5 for 12.5%)
+     * @param months     the loan tenure in months (must be &gt; 0)
+     * @return the calculated EMI rounded to 2 decimal places
+     * @throws IllegalArgumentException if any input is invalid
+     */
     public BigDecimal calculateEMI(BigDecimal principal, BigDecimal annualRate, int months) {
-        logger.debug("calculateEMI: principal={}, annualRate={}, months={}", principal, annualRate, months);
+        logger.debug("calculateEMI: principal={}, annualRate={}%, months={}", principal, annualRate, months);
 
         if (principal == null || principal.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Principal amount must be greater than zero");
@@ -212,9 +347,12 @@ public class LoanService {
         }
 
         BigDecimal emi;
+
         if (annualRate.compareTo(BigDecimal.ZERO) == 0) {
+            // Interest-free loan: simple division
             emi = principal.divide(BigDecimal.valueOf(months), 2, RoundingMode.HALF_UP);
         } else {
+            // Standard reducing-balance EMI formula
             BigDecimal monthlyRate = annualRate.divide(BigDecimal.valueOf(1200), 10, RoundingMode.HALF_UP);
             BigDecimal onePlusRToN = BigDecimal.ONE.add(monthlyRate).pow(months);
             BigDecimal numerator = principal.multiply(monthlyRate).multiply(onePlusRToN);
@@ -226,10 +364,17 @@ public class LoanService {
         return emi;
     }
 
-    // ─────────────────────────────────────────────────
-    // Private Helpers
-    // ─────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════
+    //  Private Helpers
+    // ═══════════════════════════════════════════════════
 
+    /**
+     * Fetches a loan entity from the database or throws if not found.
+     *
+     * @param loanId the UUID of the loan to fetch
+     * @return the loan entity
+     * @throws ResourceNotFoundException if no loan exists with the given ID
+     */
     private Loan fetchLoan(UUID loanId) {
         return loanRepository.findById(loanId)
                 .orElseThrow(() -> {
@@ -238,16 +383,33 @@ public class LoanService {
                 });
     }
 
+    /**
+     * Guards a loan status transition. Ensures the loan is currently in the
+     * {@code expected} status before allowing the {@code action} to proceed.
+     *
+     * <p>This enforces the loan state machine and prevents invalid transitions
+     * such as approving an already-rejected loan or disbursing a pending one.</p>
+     *
+     * @param loan     the loan entity to validate
+     * @param expected the required current status for the action to proceed
+     * @param action   a human-readable action name for error messages (e.g., "approve", "reject")
+     * @throws IllegalStateException if the current status does not match the expected status
+     */
     private void validateStatus(Loan loan, LoanStatus expected, String action) {
         if (loan.getLoanStatus() != expected) {
-            logger.warn("Cannot {} loan: loanId={}, currentStatus={}, expectedStatus={}",
+            logger.warn("Invalid state transition: cannot {} loan — loanId={}, currentStatus={}, requiredStatus={}",
                     action, loan.getLoanId(), loan.getLoanStatus(), expected);
             throw new IllegalStateException(
                     "Cannot " + action + " loan. Expected status: " + expected
                     + ", current: " + loan.getLoanStatus());
         }
+        logger.debug("Status validation passed: loanId={}, status={}, action={}",
+                loan.getLoanId(), loan.getLoanStatus(), action);
     }
 
+    /**
+     * Maps a {@link Loan} entity to a {@link LoanResponseDTO}.
+     */
     private LoanResponseDTO toResponseDTO(Loan loan) {
         return new LoanResponseDTO(
                 loan.getLoanId(),
@@ -261,24 +423,36 @@ public class LoanService {
         );
     }
 
-    // ─────────────────────────────────────────────────
-    // Kafka Helpers (non-critical — isolated from @Transactional)
-    // ─────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════
+    //  Kafka Event Publishers
+    //  Non-critical — failures are logged but never block
+    //  or roll back the database transaction.
+    // ═══════════════════════════════════════════════════
 
-    private void sendApplicationEvent(Loan loan, BigDecimal amount) {
+    /**
+     * Publishes a loan application event to Kafka for downstream notification.
+     *
+     * @param loan   the newly created loan entity
+     * @param email  the customer's email address
+     * @param amount the requested loan amount
+     */
+    private void sendApplicationEvent(Loan loan, String email, BigDecimal amount) {
         try {
             LoanApplicationEvent event = new LoanApplicationEvent();
             event.setCustomerId(loan.getCustomerId());
             event.setAccountNumber(loan.getAccountNumber());
-            event.setLoanAmount(amount);
-            event.setMessage("Loan application for amount " + amount + " submitted successfully. Loan ID: " + loan.getLoanId());
+            event.setEmail(email);
+            event.setMessage("Loan application for amount " + amount
+                    + " submitted successfully. Loan ID: " + loan.getLoanId());
 
             kafkaTemplate.send(KafkaConstants.LOAN_APPLICATION_TOPIC, loan.getCustomerId().toString(), event)
                     .whenComplete((result, ex) -> {
                         if (ex != null) {
-                            logger.error("Kafka send failed [LOAN_APPLICATION]: loanId={}, error={}", loan.getLoanId(), ex.getMessage(), ex);
+                            logger.error("Kafka send failed [LOAN_APPLICATION]: loanId={}, error={}",
+                                    loan.getLoanId(), ex.getMessage(), ex);
                         } else {
-                            logger.info("Kafka sent [LOAN_APPLICATION]: loanId={}, offset={}", loan.getLoanId(), result.getRecordMetadata().offset());
+                            logger.info("Kafka sent [LOAN_APPLICATION]: loanId={}, offset={}",
+                                    loan.getLoanId(), result.getRecordMetadata().offset());
                         }
                     });
         } catch (Exception e) {
@@ -286,16 +460,26 @@ public class LoanService {
         }
     }
 
-    private void sendStatusEvent(Loan loan, LoanStatus status, String message) {
+    /**
+     * Publishes a loan status change event (APPROVED / REJECTED) to Kafka.
+     *
+     * @param loan    the loan entity
+     * @param status  the new loan status
+     * @param message a human-readable message for the customer notification
+     */
+    private void sendStatusEvent(Loan loan, String status, String message) {
         try {
+            LoanStatusEvent event = new LoanStatusEvent(
+                    loan.getLoanId(), loan.getCustomerId(), status, message);
 
-            LoanStatusEvent event = new LoanStatusEvent(loan.getLoanId(), loan.getCustomerId(), status, message);
             kafkaTemplate.send(KafkaConstants.LOAN_STATUS_TOPIC, loan.getCustomerId().toString(), event)
                     .whenComplete((result, ex) -> {
                         if (ex != null) {
-                            logger.error("Kafka send failed [LOAN_STATUS]: loanId={}, status={}, error={}", loan.getLoanId(), status, ex.getMessage(), ex);
+                            logger.error("Kafka send failed [LOAN_STATUS]: loanId={}, status={}, error={}",
+                                    loan.getLoanId(), status, ex.getMessage(), ex);
                         } else {
-                            logger.info("Kafka sent [LOAN_STATUS]: loanId={}, status={}, offset={}", loan.getLoanId(), status, result.getRecordMetadata().offset());
+                            logger.info("Kafka sent [LOAN_STATUS]: loanId={}, status={}, offset={}",
+                                    loan.getLoanId(), status, result.getRecordMetadata().offset());
                         }
                     });
         } catch (Exception e) {
@@ -303,21 +487,30 @@ public class LoanService {
         }
     }
 
+    /**
+     * Publishes a loan disbursement event to Kafka for downstream processing
+     * (e.g., crediting the loan amount to the customer's account).
+     *
+     * @param loan the disbursed loan entity
+     */
     private void sendDisbursementEvent(Loan loan) {
         try {
             LoanDisbursementEvent event = new LoanDisbursementEvent(
-                    loan.getLoanId(),
                     loan.getCustomerId(),
                     loan.getAccountNumber(),
-                    loan.getLoanAmount(),
-                    "Your loan with ID " + loan.getLoanId() + " has been DISBURSED. Amount: " + loan.getLoanAmount()
+                    "dummy@example.com",
+                    "Your loan with ID " + loan.getLoanId()
+                            + " has been DISBURSED. Amount: " + loan.getLoanAmount()
             );
+
             kafkaTemplate.send(KafkaConstants.LOAN_DISBURSEMENT_TOPIC, loan.getCustomerId().toString(), event)
                     .whenComplete((result, ex) -> {
                         if (ex != null) {
-                            logger.error("Kafka send failed [LOAN_DISBURSEMENT]: loanId={}, error={}", loan.getLoanId(), ex.getMessage(), ex);
+                            logger.error("Kafka send failed [LOAN_DISBURSEMENT]: loanId={}, error={}",
+                                    loan.getLoanId(), ex.getMessage(), ex);
                         } else {
-                            logger.info("Kafka sent [LOAN_DISBURSEMENT]: loanId={}, offset={}", loan.getLoanId(), result.getRecordMetadata().offset());
+                            logger.info("Kafka sent [LOAN_DISBURSEMENT]: loanId={}, offset={}",
+                                    loan.getLoanId(), result.getRecordMetadata().offset());
                         }
                     });
         } catch (Exception e) {
@@ -325,27 +518,41 @@ public class LoanService {
         }
     }
 
-    // ─────────────────────────────────────────────────
-    // Feign helpers
-    // ─────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════
+    //  Feign Client Helpers
+    // ═══════════════════════════════════════════════════
 
+    /**
+     * Fetches account details from the Account Service via Feign.
+     *
+     * @param accountNumber the account number to look up
+     * @return the account details
+     * @throws ResourceNotFoundException if the account does not exist
+     */
     public AccountResponseDTO getAccountDetails(String accountNumber) {
+        logger.debug("Fetching account details: accountNumber={}", accountNumber);
         AccountResponseDTO dto = accountFeignService.getAccountByAccountNumber(accountNumber).getBody();
         if (dto == null) {
             logger.error("Account not found: accountNumber={}", accountNumber);
             throw new ResourceNotFoundException("Account not found: " + accountNumber);
         }
-        logger.info("Account fetched: accountNumber={}", accountNumber);
         return dto;
     }
 
+    /**
+     * Fetches customer details from the Customer Service via Feign.
+     *
+     * @param customerId the UUID of the customer to look up
+     * @return the customer details
+     * @throws ResourceNotFoundException if the customer does not exist
+     */
     public CustomerDTO getCustomerDetails(UUID customerId) {
+        logger.debug("Fetching customer details: customerId={}", customerId);
         CustomerDTO dto = customerFeignService.findById(customerId).getBody();
         if (dto == null) {
             logger.error("Customer not found: customerId={}", customerId);
             throw new ResourceNotFoundException("Customer not found: " + customerId);
         }
-        logger.info("Customer fetched: customerId={}", customerId);
         return dto;
     }
 }
