@@ -288,6 +288,7 @@ public class LoanService {
 
     private void sendStatusEvent(Loan loan, LoanStatus status, String message) {
         try {
+
             LoanStatusEvent event = new LoanStatusEvent(loan.getLoanId(), loan.getCustomerId(), status, message);
             kafkaTemplate.send(KafkaConstants.LOAN_STATUS_TOPIC, loan.getCustomerId().toString(), event)
                     .whenComplete((result, ex) -> {
