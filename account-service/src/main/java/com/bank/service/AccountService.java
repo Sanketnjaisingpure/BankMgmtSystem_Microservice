@@ -139,12 +139,16 @@ public class AccountService {
             TransactionEvent transactionEvent = createTransactionEvent(accountNumber, accountDto.balance());
             kafkaTemplate.send(KafkaConstants.TRANSACTION_TOPIC, account.getCustomerId().toString(), transactionEvent);
 
-
+            // -- Notification Event Trigger --
             AccountCreationEvent event = new AccountCreationEvent();
             event.setAccountNumber(accountNumber);
             event.setCustomerId(accountDto.customerId());
             event.setEmail(customerDTO.getEmail());
             event.setMessage("Account " + accountNumber + " created successfully");
+            event.setSourceService("ACCOUNT_SERVICE");
+            event.setNotificationType("ACCOUNT_CREATED");
+            event.setSubject("Account Created");
+            event.setReferenceId(accountNumber);
 
             logger.info("Sending account creation notification via Kafka for accountNumber={}", accountNumber);
             kafkaTemplate.send(KafkaConstants.ACCOUNT_CREATION_TOPIC, accountDto.customerId().toString(), event);
@@ -634,18 +638,45 @@ public class AccountService {
         event.setTransactionType(type);
         event.setAmount(amount);
 
+        // ── Notification-specific fields ──
+        event.setSourceService("ACCOUNT_SERVICE");
+        event.setReferenceId(accountNumber);
+
+        // Map TransactionType to NotificationType string and set message + subject
         switch (type) {
-            case DEPOSIT -> event.setMessage(
-                    String.format("Amount %s credited to your account %s", amount, accountNumber)
-            );
-            case WITHDRAW -> event.setMessage(
-                    String.format("Amount %s debited from your account %s", amount, accountNumber)
-            );
-            case TRANSFER -> event.setMessage(
-                    String.format("Amount %s transferred from your account %s", amount, accountNumber)
-            );
-            default -> event.setMessage("Transaction occurred");
+            case DEPOSIT -> {
+                event.setMessage(
+                        String.format("Amount %s credited to your account %s", amount, accountNumber)
+                );
+                event.setNotificationType("DEPOSIT");
+                event.setSubject("Deposit Successful");
+            }
+            case WITHDRAW -> {
+                event.setMessage(
+                        String.format("Amount %s debited from your account %s", amount, accountNumber)
+                );
+                event.setNotificationType("WITHDRAWAL");
+                event.setSubject("Withdrawal Successful");
+            }
+            case TRANSFER -> {
+                event.setMessage(
+                        String.format("Amount %s transferred from your account %s", amount, accountNumber)
+                );
+                event.setNotificationType("TRANSFER");
+                event.setSubject("Transfer Successful");
+            }
+            default -> {
+                event.setMessage("Transaction occurred");
+                event.setNotificationType("DEPOSIT");
+                event.setSubject("Transaction Notification");
+            }
         }
+
+        // Build JSON metadata with transaction-specific details
+        event.setMetadata(String.format(
+                "{\"transactionType\":\"%s\",\"amount\":\"%s\",\"accountNumber\":\"%s\"}",
+                type, amount, accountNumber
+        ));
 
         return event;
     }

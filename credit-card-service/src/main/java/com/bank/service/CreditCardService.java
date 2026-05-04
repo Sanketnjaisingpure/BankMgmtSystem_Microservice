@@ -382,8 +382,12 @@ public class CreditCardService {
         logger.info("Payment applied: cardId={}, paid={}, newOutstanding={}, newAvailable={}",
                 cardId, paymentAmount, card.getOutstandingBalance(), card.getAvailableLimit());
 
+
+        // -- transaction kafka notification
         publishTransactionEvent(card, "PAYMENT", paymentAmount,
                 txn.description() != null ? txn.description() : "Credit card payment");
+
+        // -- notification kafka event (need to add)
 
         return toResponseDTO(card);
     }

@@ -445,6 +445,16 @@ public class LoanService {
             event.setMessage("Loan application for amount " + amount
                     + " submitted successfully. Loan ID: " + loan.getLoanId());
 
+            // ── Notification-specific fields ──
+            event.setSourceService("LOAN_SERVICE");
+            event.setNotificationType("LOAN_APPLIED");
+            event.setSubject("Loan Application Submitted");
+            event.setReferenceId(loan.getLoanId().toString());
+            event.setMetadata(String.format(
+                    "{\"loanId\":\"%s\",\"loanAmount\":\"%s\",\"tenureMonths\":%d,\"accountNumber\":\"%s\"}",
+                    loan.getLoanId(), amount, loan.getTenureMonths(), loan.getAccountNumber()
+            ));
+
             kafkaTemplate.send(KafkaConstants.LOAN_APPLICATION_TOPIC, loan.getCustomerId().toString(), event)
                     .whenComplete((result, ex) -> {
                         if (ex != null) {
@@ -469,8 +479,22 @@ public class LoanService {
      */
     private void sendStatusEvent(Loan loan, String status, String message) {
         try {
-            LoanStatusEvent event = new LoanStatusEvent(
-                    loan.getLoanId(), loan.getCustomerId(), status, message);
+            LoanStatusEvent event = new LoanStatusEvent();
+            event.setLoanId(loan.getLoanId());
+            event.setCustomerId(loan.getCustomerId());
+            event.setStatus(status);
+            event.setMessage(message);
+
+            // ── Notification-specific fields ──
+            event.setSourceService("LOAN_SERVICE");
+            event.setNotificationType("APPROVED".equals(status) ? "LOAN_APPROVED" : "LOAN_REJECTED");
+            event.setSubject("Loan " + status);
+            event.setReferenceId(loan.getLoanId().toString());
+            event.setMetadata(String.format(
+                    "{\"loanId\":\"%s\",\"loanStatus\":\"%s\",\"loanAmount\":\"%s\",\"emiAmount\":\"%s\"}",
+                    loan.getLoanId(), status, loan.getLoanAmount(),
+                    loan.getEmiAmount() != null ? loan.getEmiAmount() : "N/A"
+            ));
 
             kafkaTemplate.send(KafkaConstants.LOAN_STATUS_TOPIC, loan.getCustomerId().toString(), event)
                     .whenComplete((result, ex) -> {
@@ -489,19 +513,28 @@ public class LoanService {
 
     /**
      * Publishes a loan disbursement event to Kafka for downstream processing
-     * (e.g., crediting the loan amount to the customer's account).
+     * (e.g., notifying the customer that the loan amount has been credited).
      *
      * @param loan the disbursed loan entity
      */
     private void sendDisbursementEvent(Loan loan) {
         try {
-            LoanDisbursementEvent event = new LoanDisbursementEvent(
-                    loan.getCustomerId(),
-                    loan.getAccountNumber(),
-                    "dummy@example.com",
-                    "Your loan with ID " + loan.getLoanId()
-                            + " has been DISBURSED. Amount: " + loan.getLoanAmount()
-            );
+            LoanDisbursementEvent event = new LoanDisbursementEvent();
+            event.setCustomerId(loan.getCustomerId());
+            event.setAccountNumber(loan.getAccountNumber());
+            event.setEmail("dummy@example.com");
+            event.setMessage("Your loan with ID " + loan.getLoanId()
+                    + " has been DISBURSED. Amount: " + loan.getLoanAmount());
+
+            // ── Notification-specific fields ──
+            event.setSourceService("LOAN_SERVICE");
+            event.setNotificationType("LOAN_DISBURSED");
+            event.setSubject("Loan Disbursed");
+            event.setReferenceId(loan.getLoanId().toString());
+            event.setMetadata(String.format(
+                    "{\"loanId\":\"%s\",\"loanAmount\":\"%s\",\"accountNumber\":\"%s\",\"emiAmount\":\"%s\"}",
+                    loan.getLoanId(), loan.getLoanAmount(), loan.getAccountNumber(), loan.getEmiAmount()
+            ));
 
             kafkaTemplate.send(KafkaConstants.LOAN_DISBURSEMENT_TOPIC, loan.getCustomerId().toString(), event)
                     .whenComplete((result, ex) -> {

@@ -1,6 +1,9 @@
 package com.bank.config;
 
 public class KafkaConstants {
+
+    // ── Account Service ──
+
     public static final String ACCOUNT_CREATION_TOPIC = "account-creation-topic";
 
     public static final String ACCOUNT_CREATION_GROUP = "account-creation-group";
@@ -16,6 +19,9 @@ public class KafkaConstants {
     public static final String TRANSACTION_PAYMENT_TOPIC = "transaction-payment-topic";
 
     public static final String TRANSACTION_PAYMENT_GROUP = "transaction-payment-group";
+
+
+    // ── Loan Service ──
 
     public static final String LOAN_APPLICATION_TOPIC = "loan-application-topic";
 

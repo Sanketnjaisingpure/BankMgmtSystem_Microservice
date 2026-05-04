@@ -1,164 +1,115 @@
 package com.bank.service;
 
-import com.bank.ENUM.ChannelType;
-import com.bank.config.KafkaConstants;
-import com.bank.event.AccountCreationEvent;
-import com.bank.event.TransactionNotificationEvent;
+import com.bank.ENUM.NotificationStatus;
+import com.bank.ENUM.NotificationType;
+import com.bank.ENUM.SourceService;
 import com.bank.model.Notification;
-import com.bank.repository.NotificationRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.support.Acknowledgment;
-import org.springframework.stereotype.Service;
+
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
-@Service
-public class NotificationService {
+/**
+ * Service interface for notification management.
+ *
+ * <p>Defines contracts for:</p>
+ * <ul>
+ *   <li>Querying notifications by various filters (customer, type, source, status)</li>
+ *   <li>Analytics (counts by status and source)</li>
+ *   <li>Notification lifecycle operations (retry failed, fetch by date range)</li>
+ * </ul>
+ *
+ * <p>Kafka listener methods are handled directly in the implementation class
+ * since they are infrastructure concerns, not business contracts.</p>
+ */
+public interface NotificationService {
 
-    private static final Logger logger = LoggerFactory.getLogger(NotificationService.class);
+    // ── Query Methods ──
 
-    private final NotificationRepository notificationRepository;
+    /**
+     * Retrieve all notifications for a specific customer.
+     *
+     * @param customerId the customer's unique identifier
+     * @return list of notifications ordered by most recent first
+     */
+    List<Notification> getNotificationsByCustomerId(UUID customerId);
 
-    public NotificationService(NotificationRepository notificationRepository) {
-        this.notificationRepository = notificationRepository;
-    }
+    /**
+     * Retrieve all notifications of a specific type (e.g., ACCOUNT_CREATED, DEPOSIT).
+     *
+     * @param notificationType the notification type to filter by
+     * @return list of matching notifications ordered by most recent first
+     */
+    List<Notification> getNotificationsByType(NotificationType notificationType);
 
-    @KafkaListener(
-            topics = KafkaConstants.ACCOUNT_CREATION_TOPIC,
-            groupId = KafkaConstants.ACCOUNT_CREATION_GROUP
-    )
-    public void sendAccountCreationNotification(AccountCreationEvent event,
-                                                Acknowledgment ack) {
+    /**
+     * Retrieve all notifications from a specific source service (e.g., ACCOUNT_SERVICE).
+     *
+     * @param sourceService the originating microservice
+     * @return list of matching notifications ordered by most recent first
+     */
+    List<Notification> getNotificationsBySourceService(SourceService sourceService);
 
-        logger.info("Received ACCOUNT_CREATION event: customerId={}", event.getCustomerId());
+    /**
+     * Retrieve all notifications with a specific delivery status.
+     *
+     * @param status the notification status to filter by (PENDING, SENT, FAILED, RETRYING)
+     * @return list of matching notifications ordered by most recent first
+     */
+    List<Notification> getNotificationsByStatus(NotificationStatus status);
 
-        try {
-            processNotification(event.getCustomerId(), event.getMessage());
+    /**
+     * Retrieve notifications for a customer filtered by notification type.
+     *
+     * @param customerId       the customer's unique identifier
+     * @param notificationType the notification type to filter by
+     * @return list of matching notifications
+     */
+    List<Notification> getNotificationsByCustomerAndType(UUID customerId, NotificationType notificationType);
 
-            ack.acknowledge();
-            logger.info("ACK success: ACCOUNT_CREATION customerId={}", event.getCustomerId());
+    /**
+     * Retrieve notifications for a customer filtered by source service.
+     *
+     * @param customerId    the customer's unique identifier
+     * @param sourceService the originating microservice
+     * @return list of matching notifications
+     */
+    List<Notification> getNotificationsByCustomerAndSource(UUID customerId, SourceService sourceService);
 
-        } catch (Exception e) {
-            logger.error("Failed to process ACCOUNT_CREATION event: customerId={}",
-                    event.getCustomerId(), e);
+    /**
+     * Retrieve all notifications linked to a specific reference entity.
+     *
+     * @param referenceId the reference identifier (account number, loan ID, card ID)
+     * @return list of matching notifications
+     */
+    List<Notification> getNotificationsByReferenceId(String referenceId);
 
-            // ❗ No ACK → Kafka will retry automatically
-        }
-    }
+    /**
+     * Retrieve notifications created within a date range.
+     *
+     * @param start the start of the date range (inclusive)
+     * @param end   the end of the date range (inclusive)
+     * @return list of matching notifications
+     */
+    List<Notification> getNotificationsByDateRange(LocalDateTime start, LocalDateTime end);
 
-    @KafkaListener(
-            topics = KafkaConstants.TRANSACTION_NOTIFICATION_TOPIC,
-            groupId = KafkaConstants.TRANSACTION_NOTIFICATION_GROUP
-    )
-    public void sendTransactionNotification(TransactionNotificationEvent event,
-                                            Acknowledgment ack) {
+    // ── Analytics Methods ──
 
-        logger.info("Received TRANSACTION event: customerId={}, type={}, amount={}",
-                event.getCustomerId(),
-                event.getTransactionType(),
-                event.getAmount());
+    /**
+     * Count notifications by delivery status.
+     * Useful for monitoring dashboards.
+     *
+     * @param status the status to count
+     * @return total count of notifications with the given status
+     */
+    long countByStatus(NotificationStatus status);
 
-        try {
-            processNotification(event.getCustomerId(), event.getMessage());
-
-            ack.acknowledge();
-            logger.info("ACK success: TRANSACTION customerId={}", event.getCustomerId());
-
-        } catch (Exception e) {
-            logger.error("Failed to process TRANSACTION event: customerId={}",
-                    event.getCustomerId(), e);
-
-            // ❗ No ACK → retry will happen
-        }
-    }
-
-    @KafkaListener(
-            topics = KafkaConstants.LOAN_APPLICATION_TOPIC,
-            groupId = KafkaConstants.LOAN_APPLICATION_GROUP
-    )
-    public void sendLoanApplicationNotification(com.bank.event.LoanApplicationEvent event,
-                                                Acknowledgment ack) {
-
-        logger.info("Received LOAN_APPLICATION event: Event :{} ",
-                event.getMessage());
-
-        try {
-            processNotification(event.getCustomerId(), event.getMessage());
-
-            ack.acknowledge();
-            logger.info("ACK success: LOAN_APPLICATION customerId={}", event.getCustomerId());
-
-        } catch (Exception e) {
-            logger.error("Failed to process LOAN_APPLICATION event: customerId={}",
-                    event.getCustomerId(), e);
-
-            // ❗ No ACK → retry will happen
-        }
-    }
-
-    @KafkaListener(
-            topics = KafkaConstants.LOAN_STATUS_TOPIC,
-            groupId = KafkaConstants.LOAN_STATUS_GROUP
-    )
-    public void sendLoanStatusNotification(com.bank.event.LoanStatusEvent event,
-                                           Acknowledgment ack) {
-
-        logger.info("Received LOAN_STATUS event: loanId={}, customerId={}, status={}",
-                event.getLoanId(), event.getCustomerId(), event.getStatus());
-
-        try {
-            processNotification(event.getCustomerId(), event.getMessage());
-
-            ack.acknowledge();
-            logger.info("ACK success: LOAN_STATUS loanId={}", event.getLoanId());
-
-        } catch (Exception e) {
-            logger.error("Failed to process LOAN_STATUS event: loanId={}",
-                    event.getLoanId(), e);
-
-            // ❗ No ACK → retry will happen
-        }
-    }
-
-    @KafkaListener(
-            topics = KafkaConstants.LOAN_DISBURSEMENT_TOPIC,
-            groupId = KafkaConstants.LOAN_DISBURSEMENT_GROUP
-    )
-    public void sendLoanDisbursementNotification(com.bank.event.LoanDisbursementEvent event,
-                                                 Acknowledgment ack) {
-
-        logger.info("Received LOAN_DISBURSEMENT event: {}" ,event.getMessage());
-
-        try {
-            processNotification(event.getCustomerId(), event.getMessage());
-
-            ack.acknowledge();
-            logger.info("ACK success: LOAN_DISBURSEMENT customer Account Number ={}", event.getAccountNumber());
-
-        } catch (Exception e) {
-            logger.error("Failed to process LOAN_DISBURSEMENT event: customer Account Number {}",
-                    event.getAccountNumber(), e);
-
-            // ❗ No ACK → retry will happen
-        }
-    }
-
-    private void processNotification(UUID customerId, String message) {
-
-        logger.info("Processing notification: customerId={}", customerId);
-
-        Notification notification = new Notification();
-        notification.setCustomerId(customerId);
-        notification.setMessage(message);
-        notification.setChannelType(ChannelType.EMAIL);
-        notification.setSentAt(LocalDateTime.now());
-        notification.setStatus("SUCCESS");
-
-        notificationRepository.save(notification);
-
-        logger.info("Notification saved successfully: customerId={}", customerId);
-    }
-
+    /**
+     * Count notifications by source service.
+     * Useful for analytics and service health monitoring.
+     *
+     * @param sourceService the source service to count
+     * @return total count of notifications from the given service
+     */
+    long countBySourceService(SourceService sourceService);
 }
