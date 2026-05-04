@@ -254,6 +254,130 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     // ════════════════════════════════════════════════════════════════════════
+    //  KAFKA LISTENERS — Credit Card Service Events
+    // ════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Handles credit card application events from credit-card-service.
+     * Reads all notification-specific fields directly from the event.
+     */
+    @KafkaListener(
+            topics = KafkaConstants.CREDIT_CARD_APPLICATION_TOPIC,
+            groupId = KafkaConstants.CREDIT_CARD_APPLICATION_GROUP
+    )
+    public void handleCreditCardApplicationEvent(CreditCardApplicationEvent event, Acknowledgment ack) {
+
+        logger.info("Received CC_APPLICATION event: customerId={}, notificationType={}, referenceId={}",
+                event.getCustomerId(), event.getNotificationType(), event.getReferenceId());
+
+        try {
+            Notification notification = Notification.builder()
+                    .customerId(event.getCustomerId())
+                    .sourceService(SourceService.valueOf(event.getSourceService()))
+                    .notificationType(NotificationType.valueOf(event.getNotificationType()))
+                    .channelType(ChannelType.EMAIL)
+                    .referenceId(event.getReferenceId())
+                    .subject(event.getSubject())
+                    .message(event.getMessage())
+                    .metadata(event.getMetadata())
+                    .status(NotificationStatus.SENT)
+                    .sentAt(LocalDateTime.now())
+                    .build();
+
+            notificationRepository.save(notification);
+
+            ack.acknowledge();
+            logger.info("ACK success: CC_APPLICATION notification saved for customerId={}, referenceId={}",
+                    event.getCustomerId(), event.getReferenceId());
+
+        } catch (Exception e) {
+            logger.error("Failed to process CC_APPLICATION event: customerId={}", event.getCustomerId(), e);
+            // ❗ No ACK → retry will happen
+        }
+    }
+
+    /**
+     * Handles credit card status change events from credit-card-service
+     * (approved, rejected, activated, blocked, unblocked, closed).
+     * Reads all notification-specific fields directly from the event.
+     */
+    @KafkaListener(
+            topics = KafkaConstants.CREDIT_CARD_STATUS_TOPIC,
+            groupId = KafkaConstants.CREDIT_CARD_STATUS_GROUP
+    )
+    public void handleCreditCardStatusEvent(CreditCardStatusEvent event, Acknowledgment ack) {
+
+        logger.info("Received CC_STATUS event: cardId={}, customerId={}, status={}, notificationType={}",
+                event.getCardId(), event.getCustomerId(), event.getStatus(), event.getNotificationType());
+
+        try {
+            Notification notification = Notification.builder()
+                    .customerId(event.getCustomerId())
+                    .sourceService(SourceService.valueOf(event.getSourceService()))
+                    .notificationType(NotificationType.valueOf(event.getNotificationType()))
+                    .channelType(ChannelType.EMAIL)
+                    .referenceId(event.getReferenceId())
+                    .subject(event.getSubject())
+                    .message(event.getMessage())
+                    .metadata(event.getMetadata())
+                    .status(NotificationStatus.SENT)
+                    .sentAt(LocalDateTime.now())
+                    .build();
+
+            notificationRepository.save(notification);
+
+            ack.acknowledge();
+            logger.info("ACK success: CC_STATUS notification saved for cardId={}, type={}",
+                    event.getCardId(), event.getNotificationType());
+
+        } catch (Exception e) {
+            logger.error("Failed to process CC_STATUS event: cardId={}", event.getCardId(), e);
+            // ❗ No ACK → retry will happen
+        }
+    }
+
+    /**
+     * Handles credit card transaction events (charge, payment) from credit-card-service.
+     * Reads all notification-specific fields directly from the event.
+     */
+    @KafkaListener(
+            topics = KafkaConstants.CREDIT_CARD_TRANSACTION_TOPIC,
+            groupId = KafkaConstants.CREDIT_CARD_TRANSACTION_GROUP
+    )
+    public void handleCreditCardTransactionEvent(CreditCardTransactionEvent event, Acknowledgment ack) {
+
+        logger.info("Received CC_TRANSACTION event: cardId={}, customerId={}, type={}, notificationType={}, amount={}",
+                event.getCardId(), event.getCustomerId(), event.getTransactionType(),
+                event.getNotificationType(), event.getAmount());
+
+        try {
+            Notification notification = Notification.builder()
+                    .customerId(event.getCustomerId())
+                    .sourceService(SourceService.valueOf(event.getSourceService()))
+                    .notificationType(NotificationType.valueOf(event.getNotificationType()))
+                    .channelType(ChannelType.EMAIL)
+                    .referenceId(event.getReferenceId())
+                    .subject(event.getSubject())
+                    .message(event.getDescription())
+                    .metadata(event.getMetadata())
+                    .status(NotificationStatus.SENT)
+                    .sentAt(LocalDateTime.now())
+                    .build();
+
+            notificationRepository.save(notification);
+
+            ack.acknowledge();
+            logger.info("ACK success: CC_TRANSACTION notification saved for cardId={}, type={}, amount={}",
+                    event.getCardId(), event.getNotificationType(), event.getAmount());
+
+        } catch (Exception e) {
+            logger.error("Failed to process CC_TRANSACTION event: cardId={}, type={}",
+                    event.getCardId(), event.getTransactionType(), e);
+            // ❗ No ACK → retry will happen
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
     //  QUERY METHODS — Interface Implementation
     // ════════════════════════════════════════════════════════════════════════
 

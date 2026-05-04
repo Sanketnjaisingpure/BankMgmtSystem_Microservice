@@ -117,7 +117,7 @@ public class CreditCardService {
         creditCardRepository.save(card);
         logger.info("Credit card application saved: cardId={}, status={}", card.getCardId(), card.getCardStatus());
 
-        // Step 4: Publish Kafka event (non-critical)
+        // Step 4: Publish Kafka event (non-critical) notification event
         publishApplicationEvent(card, customer.getEmail());
 
         return toResponseDTO(card);
@@ -141,6 +141,7 @@ public class CreditCardService {
         creditCardRepository.save(card);
         logger.info("Credit card approved: cardId={}", cardId);
 
+        // notification event
         publishStatusEvent(card, "APPROVED",
                 "Your credit card application has been APPROVED. Card ID: " + cardId);
 
@@ -237,7 +238,7 @@ public class CreditCardService {
         creditCardRepository.save(card);
         logger.info("Credit card unblocked: cardId={}", cardId);
 
-        publishStatusEvent(card, "ACTIVE",
+        publishStatusEvent(card, "UNBLOCKED",
                 "Your credit card " + card.getCardNumber() + " has been UNBLOCKED and is now ACTIVE.");
 
         return toResponseDTO(card);
@@ -382,12 +383,9 @@ public class CreditCardService {
         logger.info("Payment applied: cardId={}, paid={}, newOutstanding={}, newAvailable={}",
                 cardId, paymentAmount, card.getOutstandingBalance(), card.getAvailableLimit());
 
-
-        // -- transaction kafka notification
+        // -- Kafka: CC transaction event (serves both transaction-service record + notification-service)
         publishTransactionEvent(card, "PAYMENT", paymentAmount,
                 txn.description() != null ? txn.description() : "Credit card payment");
-
-        // -- notification kafka event (need to add)
 
         return toResponseDTO(card);
     }
@@ -491,10 +489,23 @@ public class CreditCardService {
 
     private void publishApplicationEvent(CreditCard card, String email) {
         try {
-            CreditCardApplicationEvent event = new CreditCardApplicationEvent(
-                    card.getCardId(), card.getCustomerId(), email,
-                    card.getCreditLimit(),
-                    "Credit card application submitted. Card ID: " + card.getCardId());
+            CreditCardApplicationEvent event = new CreditCardApplicationEvent();
+            event.setCardId(card.getCardId());
+            event.setCustomerId(card.getCustomerId());
+            event.setEmail(email);
+            event.setCreditLimit(card.getCreditLimit());
+            event.setMessage("Credit card application submitted. Card ID: " + card.getCardId());
+
+            // ── Notification-specific fields ──
+            event.setSourceService("CREDIT_CARD_SERVICE");
+            event.setNotificationType("CREDIT_CARD_APPLIED");
+            event.setSubject("Credit Card Application Submitted");
+            event.setReferenceId(card.getCardId().toString());
+            event.setMetadata(String.format(
+                    "{\"cardId\":\"%s\",\"creditLimit\":\"%s\",\"accountNumber\":\"%s\"}",
+                    card.getCardId(), card.getCreditLimit(), card.getAccountNumber()
+            ));
+
             kafkaTemplate.send(KafkaConstants.CREDIT_CARD_APPLICATION_TOPIC,
                             card.getCustomerId().toString(), event)
                     .whenComplete((r, ex) -> {
@@ -506,10 +517,40 @@ public class CreditCardService {
         }
     }
 
+    /**
+     * Maps credit card status strings to NotificationType values.
+     * Used by publishStatusEvent to set the correct notificationType on the event.
+     */
+    private String mapCardStatusToNotificationType(String status) {
+        return switch (status.toUpperCase()) {
+            case "APPROVED" -> "CREDIT_CARD_APPROVED";
+            case "REJECTED" -> "CREDIT_CARD_REJECTED";
+            case "ACTIVE" -> "CREDIT_CARD_ACTIVATED";
+            case "BLOCKED" -> "CREDIT_CARD_BLOCKED";
+            case "UNBLOCKED" -> "CREDIT_CARD_UNBLOCKED";
+            case "CLOSED" -> "CREDIT_CARD_CLOSED";
+            default -> "CREDIT_CARD_ACTIVATED";
+        };
+    }
+
     private void publishStatusEvent(CreditCard card, String status, String message) {
         try {
-            CreditCardStatusEvent event = new CreditCardStatusEvent(
-                    card.getCardId(), card.getCustomerId(), status, message);
+            CreditCardStatusEvent event = new CreditCardStatusEvent();
+            event.setCardId(card.getCardId());
+            event.setCustomerId(card.getCustomerId());
+            event.setStatus(status);
+            event.setMessage(message);
+
+            // ── Notification-specific fields ──
+            event.setSourceService("CREDIT_CARD_SERVICE");
+            event.setNotificationType(mapCardStatusToNotificationType(status));
+            event.setSubject("Credit Card " + status);
+            event.setReferenceId(card.getCardId().toString());
+            event.setMetadata(String.format(
+                    "{\"cardId\":\"%s\",\"cardNumber\":\"%s\",\"cardStatus\":\"%s\",\"creditLimit\":\"%s\"}",
+                    card.getCardId(), card.getCardNumber(), status, card.getCreditLimit()
+            ));
+
             kafkaTemplate.send(KafkaConstants.CREDIT_CARD_STATUS_TOPIC,
                             card.getCustomerId().toString(), event)
                     .whenComplete((r, ex) -> {
@@ -523,9 +564,25 @@ public class CreditCardService {
 
     private void publishTransactionEvent(CreditCard card, String type, BigDecimal amount, String desc) {
         try {
-            CreditCardTransactionEvent event = new CreditCardTransactionEvent(
-                    card.getCardId(), card.getCustomerId(), type, amount,
-                    card.getOutstandingBalance(), card.getAvailableLimit(), desc);
+            CreditCardTransactionEvent event = new CreditCardTransactionEvent();
+            event.setCardId(card.getCardId());
+            event.setCustomerId(card.getCustomerId());
+            event.setTransactionType(type);
+            event.setAmount(amount);
+            event.setOutstandingBalance(card.getOutstandingBalance());
+            event.setAvailableLimit(card.getAvailableLimit());
+            event.setDescription(desc);
+
+            // ── Notification-specific fields ──
+            event.setSourceService("CREDIT_CARD_SERVICE");
+            event.setNotificationType("CHARGE".equals(type) ? "CREDIT_CARD_CHARGE" : "CREDIT_CARD_PAYMENT");
+            event.setSubject("CHARGE".equals(type) ? "Credit Card Charge" : "Credit Card Payment");
+            event.setReferenceId(card.getCardId().toString());
+            event.setMetadata(String.format(
+                    "{\"cardId\":\"%s\",\"transactionType\":\"%s\",\"amount\":\"%s\",\"outstandingBalance\":\"%s\",\"availableLimit\":\"%s\"}",
+                    card.getCardId(), type, amount, card.getOutstandingBalance(), card.getAvailableLimit()
+            ));
+
             kafkaTemplate.send(KafkaConstants.CREDIT_CARD_TRANSACTION_TOPIC,
                             card.getCustomerId().toString(), event)
                     .whenComplete((r, ex) -> {
