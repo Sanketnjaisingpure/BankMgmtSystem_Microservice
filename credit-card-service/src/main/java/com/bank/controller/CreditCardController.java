@@ -55,8 +55,11 @@ public class CreditCardController {
     /** Reject a pending credit card application. */
     @PutMapping("/{cardId}/reject")
     public ResponseEntity<CreditCardResponseDTO> rejectCard(@PathVariable UUID cardId) {
+
         logger.info("Received request to reject card: cardId={}", cardId);
+
         CreditCardResponseDTO response = creditCardService.rejectCard(cardId);
+        
         return ResponseEntity.ok(response);
     }
 
