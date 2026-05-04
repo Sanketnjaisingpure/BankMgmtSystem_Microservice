@@ -1,12 +1,15 @@
 package com.bank.service;
 
 import com.bank.ENUM.CardStatus;
+import com.bank.ENUM.TransactionStatus;
+import com.bank.ENUM.TransactionType;
 import com.bank.config.KafkaConstants;
 import com.bank.dto.*;
 import com.bank.dto.accounts.AccountResponseDTO;
 import com.bank.event.CreditCardApplicationEvent;
 import com.bank.event.CreditCardStatusEvent;
 import com.bank.event.CreditCardTransactionEvent;
+import com.bank.event.TransactionEvent;
 import com.bank.exception.ResourceNotFoundException;
 import com.bank.feign.AccountFeignService;
 import com.bank.feign.CustomerFeignService;
@@ -383,9 +386,12 @@ public class CreditCardService {
         logger.info("Payment applied: cardId={}, paid={}, newOutstanding={}, newAvailable={}",
                 cardId, paymentAmount, card.getOutstandingBalance(), card.getAvailableLimit());
 
-        // -- Kafka: CC transaction event (serves both transaction-service record + notification-service)
+        // -- Kafka event 1: CC transaction event → notification-service records the payment notification
         publishTransactionEvent(card, "PAYMENT", paymentAmount,
                 txn.description() != null ? txn.description() : "Credit card payment");
+
+        // -- Kafka event 2: TransactionEvent → transaction-service records this as a debit/withdrawal
+        publishPaymentToTransactionService(card, paymentAmount, idempotencyKey);
 
         return toResponseDTO(card);
     }
@@ -559,6 +565,45 @@ public class CreditCardService {
                     });
         } catch (Exception e) {
             logger.error("Failed to publish CC status event: cardId={}", card.getCardId(), e);
+        }
+    }
+
+    /**
+     * Publishes a {@link TransactionEvent} to the transaction-service via Kafka.
+     *
+     * <p>A credit card payment debits the linked bank account, so this is recorded
+     * as a {@link TransactionType#WITHDRAW} from the account to itself (self-transfer
+     * used to capture the debit record in transaction-service).</p>
+     *
+     * @param card           the credit card being paid
+     * @param paymentAmount  the amount paid
+     * @param idempotencyKey the unique key used for the bank account debit (for traceability)
+     */
+    private void publishPaymentToTransactionService(CreditCard card, BigDecimal paymentAmount, String idempotencyKey) {
+        try {
+            TransactionEvent txnEvent = new TransactionEvent();
+            txnEvent.setTransactionType(TransactionType.WITHDRAW);
+            txnEvent.setTransactionStatus(TransactionStatus.SUCCESS);
+            txnEvent.setAmount(paymentAmount);
+            txnEvent.setSourceAccountNumber(card.getAccountNumber());
+            txnEvent.setDestinationAccountNumber(card.getAccountNumber());
+            txnEvent.setTransactionDescription(
+                    "Credit card payment — cardId: " + card.getCardId() + " | idempotencyKey: " + idempotencyKey
+            );
+
+            kafkaTemplate.send(KafkaConstants.TRANSACTION_PAYMENT_TOPIC,
+                            card.getCustomerId().toString(), txnEvent)
+                    .whenComplete((result, ex) -> {
+                        if (ex != null) {
+                            logger.error("Kafka failed [CC_PAY → TXN_SERVICE]: cardId={}, error={}",
+                                    card.getCardId(), ex.getMessage(), ex);
+                        } else {
+                            logger.info("Kafka sent [CC_PAY → TXN_SERVICE]: cardId={}, amount={}, offset={}",
+                                    card.getCardId(), paymentAmount, result.getRecordMetadata().offset());
+                        }
+                    });
+        } catch (Exception e) {
+            logger.error("Failed to publish CC payment to transaction-service: cardId={}", card.getCardId(), e);
         }
     }
 
