@@ -12,6 +12,8 @@ import com.bank.event.TransactionEvent;
 import com.bank.event.TransactionNotificationEvent;
 import com.bank.exception.ResourceNotFoundException;
 import com.bank.feign.CustomerFeignService;
+import com.bank.feign.BankFeignService;
+import com.bank.dto.BankDTO;
 import com.bank.model.Account;
 import com.bank.model.IdempotencyRequest;
 import com.bank.repository.AccountRepository;
@@ -41,6 +43,8 @@ public class AccountService {
 
     private final CustomerFeignService customerFeignService;
 
+    private final BankFeignService bankFeignService;
+
     private static final Logger logger = LoggerFactory.getLogger(AccountService.class);
 
     private final MapperConfig mapperConfig;
@@ -56,6 +60,7 @@ public class AccountService {
 
    public AccountService(AccountRepository accountRepository,
                           CustomerFeignService customerFeignService,
+                          BankFeignService bankFeignService,
                           IdempotencyRepository idempotencyRepository,
                           KafkaTemplate<String, Object> kafkaTemplate,
                           MapperConfig mapperConfig) {
@@ -63,7 +68,7 @@ public class AccountService {
        this.idempotencyRepository =idempotencyRepository;
        this.mapperConfig = mapperConfig;
        this.customerFeignService = customerFeignService;
-
+       this.bankFeignService = bankFeignService;
        this.kafkaTemplate = kafkaTemplate;
    }
 
@@ -103,6 +108,36 @@ public class AccountService {
        return customerDTO;
    }
 
+    /**
+     * Validates that the given bankId refers to an existing, ACTIVE bank in bank-service.
+     * Called only when a non-null {@code bankId} is supplied in {@code AccountRequestDTO}.
+     *
+     * @throws IllegalArgumentException if the bank is not ACTIVE
+     * @throws ResponseStatusException  if the Feign call to bank-service fails
+     */
+    private BankDTO validateAndFetchBank(UUID bankId) {
+        try {
+            BankDTO bank = bankFeignService.getBankById(bankId).getBody();
+            if (bank == null) {
+                logger.warn("Bank not found via Feign: bankId={}", bankId);
+                throw new ResourceNotFoundException("Bank not found with ID: " + bankId);
+            }
+            if (!"ACTIVE".equalsIgnoreCase(bank.getBankStatus())) {
+                logger.warn("Bank is not ACTIVE: bankId={}, status={}", bankId, bank.getBankStatus());
+                throw new IllegalArgumentException(
+                        "Cannot link account to bank '" + bank.getBankName() +
+                        "' — bank status is " + bank.getBankStatus() + ". Only ACTIVE banks are allowed.");
+            }
+            return bank;
+        } catch (ResourceNotFoundException | IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            logger.error("Failed to validate bank via bank-service: bankId={}", bankId, e);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "Unable to reach bank-service to validate bankId: " + bankId, e);
+        }
+    }
+
 
     public AccountResponseDTO createAccount(AccountRequestDTO accountDto) {
         logger.info("Creating new Account for customerId={}", accountDto.customerId());
@@ -129,6 +164,17 @@ public class AccountService {
         account.setCustomerId(accountDto.customerId());
         account.setCreatedAt(LocalDateTime.now());
         account.setUpdatedAt(LocalDateTime.now());
+
+        // ── Link to bank (optional) ──
+        // If bankId is provided, validate that the bank exists and is ACTIVE before linking.
+        if (accountDto.bankId() != null) {
+            logger.info("bankId provided — validating bank: bankId={}", accountDto.bankId());
+            BankDTO bank = validateAndFetchBank(accountDto.bankId());
+            account.setBankId(accountDto.bankId());
+            logger.info("Account linked to bank: bankId={}, bankName={}", bank.getBankId(), bank.getBankName());
+        } else {
+            logger.info("No bankId provided — account will be created without a bank link");
+        }
 
         accountRepository.save(account);
         logger.info("Account saved successfully: accountNumber={}, customerId={}", accountNumber, accountDto.customerId());

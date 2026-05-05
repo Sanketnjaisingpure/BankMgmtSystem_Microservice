@@ -24,6 +24,14 @@ public class Account {
     @NotNull
     private UUID customerId;
 
+    /**
+     * Optional reference to the bank (from bank-service) under which this account was opened.
+     * Nullable — accounts can exist without a linked bank-service registration.
+     * Not a DB foreign key since Bank lives in a separate database (bank_db).
+     */
+    @Column(nullable = true)
+    private UUID bankId;
+
     @Column(unique = true, nullable = false)
     @NotNull
     private String accountNumber;

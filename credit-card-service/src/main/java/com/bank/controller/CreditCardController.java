@@ -59,7 +59,7 @@ public class CreditCardController {
         logger.info("Received request to reject card: cardId={}", cardId);
 
         CreditCardResponseDTO response = creditCardService.rejectCard(cardId);
-        
+
         return ResponseEntity.ok(response);
     }
 

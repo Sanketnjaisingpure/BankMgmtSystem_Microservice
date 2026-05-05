@@ -2,18 +2,18 @@ package com.bank.dto;
 
 import com.bank.ENUM.AccountStatus;
 import com.bank.ENUM.AccountType;
-
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
-
 import java.math.BigDecimal;
 import java.util.UUID;
-
 
 @Data
 public class AccountResponseDTO {
 
      @NotNull private UUID customerId;
+
+     /** UUID of the linked bank (from bank-service). Null if no bank was specified on creation. */
+     private UUID bankId;
 
      @NotNull private String accountNumber;
 

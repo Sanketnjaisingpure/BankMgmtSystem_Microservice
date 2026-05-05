@@ -1,0 +1,3 @@
+USE account_db;
+
+CREATE  TABLE ACCOUNTS

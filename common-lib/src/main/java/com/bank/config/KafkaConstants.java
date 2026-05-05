@@ -48,4 +48,10 @@ public class KafkaConstants {
     public static final String CREDIT_CARD_TRANSACTION_TOPIC = "credit-card-transaction-topic";
 
     public static final String CREDIT_CARD_TRANSACTION_GROUP = "credit-card-transaction-group";
+
+    // ── Bank Service ──
+
+    public static final String BANK_REGISTRATION_TOPIC = "bank-registration-topic";
+
+    public static final String BANK_REGISTRATION_GROUP = "bank-registration-group";
 }

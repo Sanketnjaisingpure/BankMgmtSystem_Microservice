@@ -76,5 +76,18 @@
             <version>3.8.1</version>
             <scope>test</scope>
         </dependency>
+        <!-- Flyway Core -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+
+        <!-- Flyway PostgreSQL support (required for Flyway 10+ / Spring Boot 3.2+) -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+            <version>12.5.0</version>
+            <scope>runtime</scope>
+        </dependency>
     </dependencies>
 </project>
