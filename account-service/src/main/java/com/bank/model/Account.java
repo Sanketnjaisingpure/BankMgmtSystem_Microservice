@@ -25,11 +25,12 @@ public class Account {
     private UUID customerId;
 
     /**
-     * Optional reference to the bank (from bank-service) under which this account was opened.
-     * Nullable — accounts can exist without a linked bank-service registration.
+     * Reference to the bank (from bank-service) under which this account was opened.
+     * Mandatory — every account must be linked to a registered ACTIVE bank.
      * Not a DB foreign key since Bank lives in a separate database (bank_db).
      */
-    @Column(nullable = true)
+    @Column(nullable = false)
+    @NotNull
     private UUID bankId;
 
     @Column(unique = true, nullable = false)

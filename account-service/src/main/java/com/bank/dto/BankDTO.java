@@ -1,5 +1,7 @@
 package com.bank.dto;
 
+import lombok.*;
+
 import java.util.UUID;
 
 /**

@@ -8,9 +8,8 @@ import java.util.UUID;
 /**
  * Request DTO for creating a bank account.
  *
- * <p>{@code bankId} is optional — pass it when the account is being opened
- * under a specific registered bank (from bank-service). Leave {@code null}
- * for standalone account creation.
+ * <p>{@code bankId} is required — every account must be opened under
+ * a registered, ACTIVE bank (from bank-service).
  */
 public record AccountRequestDTO(
 
@@ -29,7 +28,9 @@ public record AccountRequestDTO(
     @NotNull
     BigDecimal balance,
 
-    /** Optional: UUID of the bank (from bank-service) this account belongs to. */
+    /** UUID of the bank (from bank-service) this account belongs to. */
+    @NotNull(message = "bankId is required — provide the UUID of a registered ACTIVE bank")
     UUID bankId
 ) {}
+
 

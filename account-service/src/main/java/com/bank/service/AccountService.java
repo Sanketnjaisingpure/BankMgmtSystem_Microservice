@@ -165,16 +165,12 @@ public class AccountService {
         account.setCreatedAt(LocalDateTime.now());
         account.setUpdatedAt(LocalDateTime.now());
 
-        // ── Link to bank (optional) ──
-        // If bankId is provided, validate that the bank exists and is ACTIVE before linking.
-        if (accountDto.bankId() != null) {
-            logger.info("bankId provided — validating bank: bankId={}", accountDto.bankId());
-            BankDTO bank = validateAndFetchBank(accountDto.bankId());
-            account.setBankId(accountDto.bankId());
-            logger.info("Account linked to bank: bankId={}, bankName={}", bank.getBankId(), bank.getBankName());
-        } else {
-            logger.info("No bankId provided — account will be created without a bank link");
-        }
+        // ── Link to bank (mandatory) ──
+        // Validate that the bank exists and is ACTIVE before creating the account.
+        logger.info("Validating bank before account creation: bankId={}", accountDto.bankId());
+        BankDTO bank = validateAndFetchBank(accountDto.bankId());
+        account.setBankId(accountDto.bankId());
+        logger.info("Account linked to bank: bankId={}, bankName={}", bank.getBankId(), bank.getBankName());
 
         accountRepository.save(account);
         logger.info("Account saved successfully: accountNumber={}, customerId={}", accountNumber, accountDto.customerId());
