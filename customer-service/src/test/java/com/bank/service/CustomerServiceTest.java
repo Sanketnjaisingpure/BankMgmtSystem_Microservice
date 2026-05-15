@@ -20,8 +20,6 @@ import org.modelmapper.ModelMapper;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
 
 import org.mockito.junit.jupiter.MockitoSettings;
 
@@ -68,7 +66,7 @@ class CustomerServiceTest {
         customer.setFirstName("John");
         customer.setLastName("Doe");
         customer.setEmail("john.doe@example.com");
-        customer.setMobileNumber("1234567890");
+        customer.setPhoneNumber("1234567890");
         customer.setPasswordHash("hashedPassword");
         customer.setCreatedAt(LocalDateTime.now());
         customer.setUpdatedAt(LocalDateTime.now());
@@ -212,7 +210,7 @@ class CustomerServiceTest {
     @Test
     void createCustomer_Success() {
         // Given
-        when(customerRepository.existByEmailOrMobileNumber(anyString(), anyString())).thenReturn(null);
+        when(customerRepository.existByEmailOrPhoneNumber(anyString(), anyString())).thenReturn(null);
         when(modelMapper.map(any(CreateCustomerDTO.class), eq(Customer.class))).thenReturn(customer);
         when(customerRepository.save(any(Customer.class))).thenReturn(customer);
         when(modelMapper.map(customer, CustomerDTO.class)).thenReturn(customerDTO);
@@ -223,14 +221,14 @@ class CustomerServiceTest {
         // Then
         assertThat(result).isNotNull();
         assertThat(result.getEmail()).isEqualTo("john.doe@example.com");
-        verify(customerRepository, times(1)).existByEmailOrMobileNumber("john.doe@example.com", "1234567890");
+        verify(customerRepository, times(1)).existByEmailOrPhoneNumber("john.doe@example.com", "1234567890");
         verify(customerRepository, times(1)).save(any(Customer.class));
     }
 
     @Test
     void createCustomer_DuplicateEmail() {
         // Given
-        when(customerRepository.existByEmailOrMobileNumber("john.doe@example.com", "1234567890"))
+        when(customerRepository.existByEmailOrPhoneNumber("john.doe@example.com", "1234567890"))
                 .thenReturn(customer);
 
         // When & Then
@@ -245,7 +243,7 @@ class CustomerServiceTest {
     @Test
     void createCustomer_DuplicateMobileNumber() {
         // Given
-        when(customerRepository.existByEmailOrMobileNumber("john.doe@example.com", "1234567890"))
+        when(customerRepository.existByEmailOrPhoneNumber("john.doe@example.com", "1234567890"))
                 .thenReturn(customer);
 
         // When & Then
@@ -432,7 +430,7 @@ class CustomerServiceTest {
         customer2.setFirstName("Jane");
         customer2.setLastName("Smith");
         customer2.setEmail("jane.smith@example.com");
-        customer2.setMobileNumber("0987654321");
+        customer2.setPhoneNumber("0987654321");
 
         Page<Customer> customerPage = new PageImpl<>(Arrays.asList(customer, customer2));
         when(customerRepository.findAll(any(Pageable.class))).thenReturn(customerPage);

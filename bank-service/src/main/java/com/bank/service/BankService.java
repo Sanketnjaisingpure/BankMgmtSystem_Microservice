@@ -3,6 +3,7 @@ package com.bank.service;
 import com.bank.ENUM.BankStatus;
 import com.bank.dto.BankRequestDTO;
 import com.bank.dto.BankResponseDTO;
+import com.bank.event.BankRegistrationEvent;
 import com.bank.exception.ResourceNotFoundException;
 import com.bank.model.Bank;
 import com.bank.repository.BankRepository;
@@ -15,6 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+
+import static com.bank.config.KafkaConstants.BANK_REGISTRATION_TOPIC;
 
 /**
  * Core service for bank-service.
@@ -38,7 +41,7 @@ public class BankService {
 
     private static final Logger logger = LoggerFactory.getLogger(BankService.class);
 
-    private static final String BANK_REGISTRATION_TOPIC = "bank-registration-topic";
+
 
     private final BankRepository bankRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
@@ -177,22 +180,30 @@ public class BankService {
 
     private void publishRegistrationEvent(Bank bank) {
         try {
-            java.util.Map<String, Object> event = new java.util.HashMap<>();
-            event.put("bankId", bank.getBankId().toString());
-            event.put("bankName", bank.getBankName());
-            event.put("bankCode", bank.getBankCode());
-            event.put("bankStatus", bank.getBankStatus().name());
-            event.put("sourceService", "BANK_SERVICE");
-            event.put("notificationType", "BANK_REGISTERED");
-            event.put("subject", "New Bank Registered");
-            event.put("message", "Bank '" + bank.getBankName() + "' has been registered successfully.");
+            BankRegistrationEvent event = new BankRegistrationEvent();
+            event.setBankId(bank.getBankId());
+            event.setBankName(bank.getBankName());
+            event.setBankCode(bank.getBankCode());
+            event.setBankStatus(bank.getBankStatus().name());
+            event.setMessage("Bank '" + bank.getBankName() + "' has been registered successfully.");
+
+            // ── Notification-specific fields ──
+            event.setSourceService("BANK_SERVICE");
+            event.setNotificationType("BANK_REGISTERED");
+            event.setSubject("New Bank Registered");
+            event.setReferenceId(bank.getBankId().toString());
+            event.setMetadata(String.format(
+                    "{\"bankId\":\"%s\",\"bankName\":\"%s\",\"bankCode\":\"%s\",\"bankStatus\":\"%s\"}",
+                    bank.getBankId(), bank.getBankName(), bank.getBankCode(), bank.getBankStatus()
+            ));
 
             kafkaTemplate.send(BANK_REGISTRATION_TOPIC, bank.getBankId().toString(), event)
                     .whenComplete((result, ex) -> {
                         if (ex != null) {
                             logger.error("Kafka failed [BANK_REGISTRATION]: bankId={}", bank.getBankId(), ex);
                         } else {
-                            logger.info("Kafka sent [BANK_REGISTRATION]: bankId={}", bank.getBankId());
+                            logger.info("Kafka sent [BANK_REGISTRATION]: bankId={}, offset={}",
+                                    bank.getBankId(), result.getRecordMetadata().offset());
                         }
                     });
         } catch (Exception e) {

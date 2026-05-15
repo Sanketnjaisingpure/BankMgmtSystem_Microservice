@@ -39,8 +39,8 @@ public class Notification {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID notificationId;
 
-    /** The customer who receives this notification */
-    @Column(nullable = false)
+    /** The customer who receives this notification (null for system-level events like bank registration) */
+    @Column(nullable = true)
     private UUID customerId;
 
     /** Which microservice triggered this notification */

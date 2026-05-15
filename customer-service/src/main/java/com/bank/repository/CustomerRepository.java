@@ -16,6 +16,6 @@ public interface CustomerRepository extends JpaRepository<Customer, UUID> {
     Customer findByEmail(@Param("email") String email);
 
 
-    @Query("SELECT c FROM Customer c WHERE c.email = :email OR c.mobileNumber = :mobileNumber")
-    Customer existByEmailOrMobileNumber(String email, String mobileNumber);
+    @Query("SELECT c FROM Customer c WHERE c.email = :email OR c.phoneNumber = :phoneNumber")
+    Customer existByEmailOrPhoneNumber(String email, String phoneNumber);
 }

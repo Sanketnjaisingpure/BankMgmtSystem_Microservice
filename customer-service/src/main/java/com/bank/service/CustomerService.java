@@ -36,7 +36,6 @@ public class CustomerService {
         this.mapperConfig = mapperConfig;
     }
 
-// use logger method
     // Handle Customer properly
     public CustomerDTO findByEmail(String email) {
         logger.info("Fetching customer by email: {}", email);
@@ -70,7 +69,7 @@ public class CustomerService {
         logger.info("Creating customer with | Mobile number {} | email {}" , createCustomerDTO.getMobileNumber() , createCustomerDTO.getEmail());
         Customer customer = convertToEntity(createCustomerDTO);
 
-        if(customerRepository.existByEmailOrMobileNumber(createCustomerDTO.getEmail(), createCustomerDTO.getMobileNumber())!=null){
+        if(customerRepository.existByEmailOrPhoneNumber(createCustomerDTO.getEmail(), createCustomerDTO.getMobileNumber())!=null){
             logger.error("Customer already exist  with Mobile number {} or email {} " , createCustomerDTO.getMobileNumber() , createCustomerDTO.getEmail());
             throw new DuplicateResourceException(createCustomerDTO.getEmail(), createCustomerDTO.getMobileNumber());
         }
@@ -107,7 +106,7 @@ public class CustomerService {
         try {
             customer.setFirstName(updateCustomerDTO.getFirstName());
             customer.setLastName(updateCustomerDTO.getLastName());
-            customer.setMobileNumber(updateCustomerDTO.getMobileNumber());
+            customer.setPhoneNumber(updateCustomerDTO.getMobileNumber());
             customer.setUpdatedAt(LocalDateTime.now());
             customerRepository.save(customer);
             logger.info("Customer updated successfully: customerId={}, mobileNumber={}, email={}",

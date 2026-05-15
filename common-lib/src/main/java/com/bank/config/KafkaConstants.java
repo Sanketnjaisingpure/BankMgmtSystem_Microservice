@@ -54,4 +54,5 @@ public class KafkaConstants {
     public static final String BANK_REGISTRATION_TOPIC = "bank-registration-topic";
 
     public static final String BANK_REGISTRATION_GROUP = "bank-registration-group";
+
 }
