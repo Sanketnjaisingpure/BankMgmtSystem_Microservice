@@ -22,12 +22,13 @@ import java.util.UUID;
  * </ul>
  */
 @Entity
-@Table(name = "notifications", indexes = {
-        @Index(name = "idx_notification_customer", columnList = "customerId"),
-        @Index(name = "idx_notification_type", columnList = "notificationType"),
-        @Index(name = "idx_notification_source", columnList = "sourceService"),
-        @Index(name = "idx_notification_status", columnList = "status")
-})
+@Table(name = "notification"
+//        , indexes = {
+//        @Index(name = "idx_notification_customer", columnList = "customerId"),
+//        @Index(name = "idx_notification_type", columnList = "notificationType"),
+//        @Index(name = "idx_notification_source", columnList = "sourceService"),
+//        @Index(name = "idx_notification_status", columnList = "status")}
+)
 @AllArgsConstructor
 @NoArgsConstructor
 @Getter

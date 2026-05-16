@@ -115,7 +115,9 @@ public class TransactionService {
                 event.getSourceAccountNumber());
     }
 
-    /*@DltHandler
+    /*
+
+    @DltHandler
     public void handleDlt(TransactionEvent event) {
 
         logger.error("DLT received: eventId={}, storing for manual review", event.getEventId());

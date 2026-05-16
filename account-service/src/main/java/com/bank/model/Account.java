@@ -14,6 +14,7 @@ import java.util.UUID;
 @NoArgsConstructor
 @Getter
 @Setter
+@Table(name = "account", schema = "account_db")
 public class Account {
 
     @Id
@@ -39,6 +40,7 @@ public class Account {
 
     @Enumerated(EnumType.STRING)
     @NotNull
+    @Column(unique = true)
     private AccountType accountType;
 
     @Enumerated(EnumType.STRING)

@@ -1,9 +1,12 @@
 package com.bank.event;
 
+import com.bank.ENUM.NotificationType;
+import com.bank.ENUM.SourceService;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
@@ -26,14 +29,16 @@ public class AccountCreationEvent {
     // ── Notification-specific fields ──
 
     /** Which service triggered this notification (e.g., "ACCOUNT_SERVICE") */
-    private String sourceService;
+    private SourceService sourceService;
 
     /** The type of notification (e.g., "ACCOUNT_CREATED") */
-    private String notificationType;
+    private NotificationType notificationType;
 
     /** Short summary/title for the notification */
     private String subject;
 
     /** Reference ID linking back to the source entity */
     private String referenceId;
+
+    private LocalDateTime createdAt;
 }

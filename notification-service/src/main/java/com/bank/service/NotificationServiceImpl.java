@@ -68,14 +68,16 @@ public class NotificationServiceImpl implements NotificationService {
         try {
             Notification notification = Notification.builder()
                     .customerId(event.getCustomerId())
-                    .sourceService(SourceService.valueOf(event.getSourceService()))
-                    .notificationType(NotificationType.valueOf(event.getNotificationType()))
+                    .sourceService(event.getSourceService())
+                    .notificationType(event.getNotificationType())
                     .channelType(ChannelType.EMAIL)
                     .referenceId(event.getReferenceId())
                     .subject(event.getSubject())
                     .message(event.getMessage())
                     .status(NotificationStatus.SENT)
                     .sentAt(LocalDateTime.now())
+                    .createdAt(event.getCreatedAt())
+                    .metadata("metadata")
                     .build();
 
             notificationRepository.save(notification);
@@ -107,8 +109,8 @@ public class NotificationServiceImpl implements NotificationService {
         try {
             Notification notification = Notification.builder()
                     .customerId(event.getCustomerId())
-                    .sourceService(SourceService.valueOf(event.getSourceService()))
-                    .notificationType(NotificationType.valueOf(event.getNotificationType()))
+                    .sourceService(event.getSourceService())
+                    .notificationType(event.getNotificationType())
                     .channelType(ChannelType.EMAIL)
                     .referenceId(event.getReferenceId())
                     .subject(event.getSubject())
