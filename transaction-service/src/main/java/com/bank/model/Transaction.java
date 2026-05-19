@@ -30,6 +30,7 @@ public class Transaction {
     private TransactionStatus transactionStatus;
 
     @NotNull
+    @Column(precision = 15, scale = 2)
     private BigDecimal amount;
 
     @NotNull

@@ -1,7 +1,8 @@
 package com.bank.service;
 
-import com.bank.ENUM.LoanStatus;
+import com.bank.ENUM.*;
 import com.bank.config.KafkaConstants;
+import com.bank.config.MapperConfig;
 import com.bank.dto.CustomerDTO;
 import com.bank.dto.LoanRequestDTO;
 import com.bank.dto.LoanResponseDTO;
@@ -10,8 +11,6 @@ import com.bank.event.LoanApplicationEvent;
 import com.bank.event.LoanDisbursementEvent;
 import com.bank.event.LoanStatusEvent;
 import com.bank.event.TransactionEvent;
-import com.bank.ENUM.TransactionType;
-import com.bank.ENUM.TransactionStatus;
 import com.bank.exception.ResourceNotFoundException;
 import com.bank.feign.AccountFeignService;
 import com.bank.feign.customers.CustomerFeignService;
@@ -59,6 +58,7 @@ public class LoanService {
     private final CustomerFeignService customerFeignService;
     private final LoanRepository loanRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final MapperConfig mapperConfig;
 
     /** Default annual interest rate (%), configurable via application properties. */
     @Value("${loan.default.interest-rate:12.5}")
@@ -67,10 +67,12 @@ public class LoanService {
     public LoanService(AccountFeignService accountFeignService,
                        CustomerFeignService customerFeignService,
                        LoanRepository loanRepository,
+                       MapperConfig mapperConfig,
                        KafkaTemplate<String, Object> kafkaTemplate) {
         this.accountFeignService = accountFeignService;
         this.customerFeignService = customerFeignService;
         this.loanRepository = loanRepository;
+        this.mapperConfig = mapperConfig;
         this.kafkaTemplate = kafkaTemplate;
     }
 
@@ -430,16 +432,7 @@ public class LoanService {
      * Maps a {@link Loan} entity to a {@link LoanResponseDTO}.
      */
     private LoanResponseDTO toResponseDTO(Loan loan) {
-        return new LoanResponseDTO(
-                loan.getLoanId(),
-                loan.getCustomerId(),
-                loan.getAccountNumber(),
-                loan.getLoanAmount(),
-                loan.getEmiAmount(),
-                loan.getInterestRate(),
-                loan.getTenureMonths(),
-                loan.getLoanStatus().name()
-        );
+        return mapperConfig.modelMapper().map(loan , LoanResponseDTO.class);
     }
 
     // ═══════════════════════════════════════════════════
@@ -465,8 +458,8 @@ public class LoanService {
                     + " submitted successfully. Loan ID: " + loan.getLoanId());
 
             // ── Notification-specific fields ──
-            event.setSourceService("LOAN_SERVICE");
-            event.setNotificationType("LOAN_APPLIED");
+            event.setSourceService(SourceService.LOAN_SERVICE);
+            event.setNotificationType(NotificationType.LOAN_APPLIED);
             event.setSubject("Loan Application Submitted");
             event.setReferenceId(loan.getLoanId().toString());
             event.setMetadata(String.format(
@@ -505,8 +498,8 @@ public class LoanService {
             event.setMessage(message);
 
             // ── Notification-specific fields ──
-            event.setSourceService("LOAN_SERVICE");
-            event.setNotificationType("APPROVED".equals(status) ? "LOAN_APPROVED" : "LOAN_REJECTED");
+            event.setSourceService(SourceService.LOAN_SERVICE);
+            event.setNotificationType("APPROVED".equals(status) ? NotificationType.LOAN_APPROVED : NotificationType.LOAN_REJECTED);
             event.setSubject("Loan " + status);
             event.setReferenceId(loan.getLoanId().toString());
             event.setMetadata(String.format(
@@ -546,8 +539,8 @@ public class LoanService {
                     + " has been DISBURSED. Amount: " + loan.getLoanAmount());
 
             // ── Notification-specific fields ──
-            event.setSourceService("LOAN_SERVICE");
-            event.setNotificationType("LOAN_DISBURSED");
+            event.setSourceService(SourceService.LOAN_SERVICE);
+            event.setNotificationType(NotificationType.LOAN_DISBURSED);
             event.setSubject("Loan Disbursed");
             event.setReferenceId(loan.getLoanId().toString());
             event.setMetadata(String.format(

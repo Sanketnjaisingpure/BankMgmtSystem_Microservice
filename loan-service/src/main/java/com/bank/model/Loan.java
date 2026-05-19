@@ -2,6 +2,7 @@ package com.bank.model;
 
 
 import com.bank.ENUM.LoanStatus;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import lombok.*;
@@ -25,11 +26,14 @@ public class Loan {
 
     private String accountNumber;
 
+    @Column(precision = 15, scale = 2)
     private BigDecimal loanAmount;
 
     private Double interestRate;
 
+    @Column(precision = 15, scale = 2)
     private BigDecimal emiAmount;
+
 
     private LoanStatus loanStatus;
 

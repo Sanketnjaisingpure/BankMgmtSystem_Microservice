@@ -1,5 +1,7 @@
 package com.bank.dto;
 
+import com.bank.ENUM.CardStatus;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -32,5 +34,5 @@ public record CreditCardResponseDTO(
         BigDecimal minimumDueAmount,
         Double interestRate,
         LocalDate expiryDate,
-        String status
+        CardStatus status
 ) {}

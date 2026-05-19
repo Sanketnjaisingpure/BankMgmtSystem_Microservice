@@ -1,5 +1,7 @@
 package com.bank.event;
 
+import com.bank.ENUM.NotificationType;
+import com.bank.ENUM.SourceService;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -34,10 +36,10 @@ public class CreditCardTransactionEvent {
     // ── Notification-specific fields ──
 
     /** Which service triggered this notification (e.g., "CREDIT_CARD_SERVICE") */
-    private String sourceService;
+    private SourceService sourceService;
 
     /** The type of notification (e.g., "CREDIT_CARD_CHARGE", "CREDIT_CARD_PAYMENT") */
-    private String notificationType;
+    private NotificationType notificationType;
 
     /** Short summary/title for the notification */
     private String subject;

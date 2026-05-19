@@ -12,8 +12,6 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  */
 @SpringBootApplication
 @EnableAutoConfiguration
-@EnableScheduling
-@EnableAsync
 public class TransactionServiceApplication
 {
     public static void main( String[] args )

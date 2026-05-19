@@ -1,5 +1,7 @@
 package com.bank.dto;
 
+import com.bank.ENUM.LoanStatus;
+
 import java.math.BigDecimal;
 import java.util.UUID;
 
@@ -11,5 +13,5 @@ public record LoanResponseDTO(
         BigDecimal emiAmount,
         Double interestRate,
         Integer tenureMonths,
-        String status
+        LoanStatus status
 ) {}

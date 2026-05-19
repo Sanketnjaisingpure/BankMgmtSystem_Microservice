@@ -1,9 +1,8 @@
 package com.bank.service;
 
-import com.bank.ENUM.CardStatus;
-import com.bank.ENUM.TransactionStatus;
-import com.bank.ENUM.TransactionType;
+import com.bank.ENUM.*;
 import com.bank.config.KafkaConstants;
+import com.bank.config.MapperConfig;
 import com.bank.dto.*;
 import com.bank.dto.accounts.AccountResponseDTO;
 import com.bank.event.CreditCardApplicationEvent;
@@ -50,6 +49,8 @@ public class CreditCardService {
     private final AccountFeignService accountFeignService;
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
+    private final MapperConfig mapperConfig;
+
     @Value("${credit-card.default.credit-limit:50000}")
     private BigDecimal defaultCreditLimit;
 
@@ -65,10 +66,12 @@ public class CreditCardService {
     public CreditCardService(CreditCardRepository creditCardRepository,
                              CustomerFeignService customerFeignService,
                              AccountFeignService accountFeignService,
+                             MapperConfig mapperConfig,
                              KafkaTemplate<String, Object> kafkaTemplate) {
         this.creditCardRepository = creditCardRepository;
         this.customerFeignService = customerFeignService;
         this.accountFeignService = accountFeignService;
+        this.mapperConfig = mapperConfig;
         this.kafkaTemplate = kafkaTemplate;
     }
 
@@ -442,20 +445,7 @@ public class CreditCardService {
     }
 
     private CreditCardResponseDTO toResponseDTO(CreditCard card) {
-        return new CreditCardResponseDTO(
-                card.getCardId(),
-                card.getCardNumber(),
-                card.getCustomerId(),
-                card.getAccountNumber(),
-                card.getCardHolderName(),
-                card.getCreditLimit(),
-                card.getAvailableLimit(),
-                card.getOutstandingBalance(),
-                card.getMinimumDueAmount(),
-                card.getInterestRate(),
-                card.getExpiryDate(),
-                card.getCardStatus().name()
-        );
+        return mapperConfig.modelMapper().map(card , CreditCardResponseDTO.class);
     }
 
     /** Generates a masked 16-digit card number: "****-****-****-XXXX" */
@@ -503,8 +493,8 @@ public class CreditCardService {
             event.setMessage("Credit card application submitted. Card ID: " + card.getCardId());
 
             // ── Notification-specific fields ──
-            event.setSourceService("CREDIT_CARD_SERVICE");
-            event.setNotificationType("CREDIT_CARD_APPLIED");
+            event.setSourceService(SourceService.CREDIT_CARD_SERVICE);
+            event.setNotificationType(NotificationType.CREDIT_CARD_APPLIED);
             event.setSubject("Credit Card Application Submitted");
             event.setReferenceId(card.getCardId().toString());
             event.setMetadata(String.format(
@@ -527,15 +517,14 @@ public class CreditCardService {
      * Maps credit card status strings to NotificationType values.
      * Used by publishStatusEvent to set the correct notificationType on the event.
      */
-    private String mapCardStatusToNotificationType(String status) {
+    private NotificationType mapCardStatusToNotificationType(String status) {
         return switch (status.toUpperCase()) {
-            case "APPROVED" -> "CREDIT_CARD_APPROVED";
-            case "REJECTED" -> "CREDIT_CARD_REJECTED";
-            case "ACTIVE" -> "CREDIT_CARD_ACTIVATED";
-            case "BLOCKED" -> "CREDIT_CARD_BLOCKED";
-            case "UNBLOCKED" -> "CREDIT_CARD_UNBLOCKED";
-            case "CLOSED" -> "CREDIT_CARD_CLOSED";
-            default -> "CREDIT_CARD_ACTIVATED";
+            case "APPROVED" -> NotificationType.CREDIT_CARD_APPROVED;
+            case "REJECTED" -> NotificationType.CREDIT_CARD_REJECTED;
+            case "BLOCKED" -> NotificationType.CREDIT_CARD_BLOCKED;
+            case "UNBLOCKED" -> NotificationType.CREDIT_CARD_UNBLOCKED;
+            case "CLOSED" -> NotificationType.CREDIT_CARD_CLOSED;
+            default -> NotificationType.CREDIT_CARD_ACTIVATED;
         };
     }
 
@@ -548,7 +537,7 @@ public class CreditCardService {
             event.setMessage(message);
 
             // ── Notification-specific fields ──
-            event.setSourceService("CREDIT_CARD_SERVICE");
+            event.setSourceService(SourceService.CREDIT_CARD_SERVICE);
             event.setNotificationType(mapCardStatusToNotificationType(status));
             event.setSubject("Credit Card " + status);
             event.setReferenceId(card.getCardId().toString());
@@ -619,8 +608,8 @@ public class CreditCardService {
             event.setDescription(desc);
 
             // ── Notification-specific fields ──
-            event.setSourceService("CREDIT_CARD_SERVICE");
-            event.setNotificationType("CHARGE".equals(type) ? "CREDIT_CARD_CHARGE" : "CREDIT_CARD_PAYMENT");
+            event.setSourceService(SourceService.CREDIT_CARD_SERVICE);
+            event.setNotificationType("CHARGE".equals(type) ? NotificationType.CREDIT_CARD_CHARGE : NotificationType.CREDIT_CARD_PAYMENT);
             event.setSubject("CHARGE".equals(type) ? "Credit Card Charge" : "Credit Card Payment");
             event.setReferenceId(card.getCardId().toString());
             event.setMetadata(String.format(
