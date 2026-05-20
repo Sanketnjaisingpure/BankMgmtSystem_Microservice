@@ -40,5 +40,7 @@ public class AccountCreationEvent {
     /** Reference ID linking back to the source entity */
     private String referenceId;
 
+    private String metadata;
+
     private LocalDateTime createdAt;
 }

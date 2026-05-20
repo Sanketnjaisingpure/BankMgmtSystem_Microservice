@@ -2,7 +2,16 @@ CREATE SCHEMA IF NOT EXISTS credit_card_db;
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
-CREATE TABLE credit_card_db.credit_card(
+CREATE TYPE credit_card_db.card_status AS ENUM (
+    'PENDING',
+    'APPROVED',
+    'REJECTED',
+    'ACTIVE',
+    'BLOCKED',
+    'CLOSED'
+);
+
+CREATE TABLE credit_card_db.credit_cards(
 
     card_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
@@ -10,7 +19,7 @@ CREATE TABLE credit_card_db.credit_card(
 
     customer_id UUID NOT NULL,
 
-    account_number VARCHAR(20) NOT NULL ,
+    account_number VARCHAR(255) NOT NULL ,
 
     card_holder_name VARCHAR(255) NOT NULL ,
 
@@ -22,9 +31,9 @@ CREATE TABLE credit_card_db.credit_card(
 
     minimum_due_amount NUMERIC(15,2) ,
 
-    annual_limit NUMERIC(10,2) ,
+    annual_fee NUMERIC(10,2) ,
 
-    interest_rate DECIMAL,
+    interest_rate DOUBLE PRECISION ,
 
     card_status credit_card_db.card_status NOT NULL ,
 
@@ -34,11 +43,5 @@ CREATE TABLE credit_card_db.credit_card(
 
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-
-
-
-
-
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 )

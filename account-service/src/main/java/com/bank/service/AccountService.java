@@ -193,6 +193,10 @@ public class AccountService {
             event.setSubject("Account Created");
             event.setReferenceId(accountNumber);
             event.setCreatedAt(LocalDateTime.now());
+            event.setMetadata(String.format(
+                    "{\"customerId\":\"%s\",\"accountNumber\":\"%s\",\"cardStatus\":\"%s\",\"balance\":\"%s\"}",
+                    accountDto.customerId(), accountNumber, "Account created Successfully" , accountDto.balance()
+            ));
 
             logger.info("Sending account creation notification via Kafka for accountNumber={}", accountNumber);
             kafkaTemplate.send(KafkaConstants.ACCOUNT_CREATION_TOPIC, accountDto.customerId().toString(), event);
