@@ -400,6 +400,7 @@ public class NotificationServiceImpl implements NotificationService {
             Notification notification = Notification.builder()
                     .sourceService(SourceService.valueOf(event.getSourceService()))
                     .notificationType(NotificationType.valueOf(event.getNotificationType()))
+                    .customerId(UUID.randomUUID())
                     .channelType(ChannelType.EMAIL)
                     .referenceId(event.getReferenceId())
                     .subject(event.getSubject())
