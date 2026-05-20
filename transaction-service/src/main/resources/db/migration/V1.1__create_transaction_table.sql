@@ -14,7 +14,7 @@ CREATE TYPE transaction_db.transaction_status AS ENUM (
     'FAILED'
 );
 
-CREATE TABLE transaction_db.transaction(
+CREATE TABLE transaction_db.transactions(
     transaction_id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     transaction_type transaction_db.transaction_type NOT NULL,
     transaction_status transaction_db.transaction_status NOT NULL,
