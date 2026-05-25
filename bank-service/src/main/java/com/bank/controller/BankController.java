@@ -37,28 +37,28 @@ public class BankController {
     /** POST /api/v1/banks/register — Register a new bank. */
     @PostMapping("/register")
     public ResponseEntity<BankResponseDTO> registerBank(@Valid @RequestBody BankRequestDTO request) {
-        logger.info("POST /register - bankName={}, bankCode={}", request.bankName(), request.bankCode());
+        logger.info("Received request to register bank with name : {} and code : {}", request.bankName(), request.bankCode());
         return ResponseEntity.status(HttpStatus.CREATED).body(bankService.registerBank(request));
     }
 
     /** GET /api/v1/banks/{bankId} — Get bank by UUID. */
     @GetMapping("/{bankId}")
     public ResponseEntity<BankResponseDTO> getBankById(@PathVariable UUID bankId) {
-        logger.info("GET /{}", bankId);
+        logger.info("Received request to fetch bank with id : {}", bankId);
         return ResponseEntity.ok(bankService.getBankById(bankId));
     }
 
     /** GET /api/v1/banks/code/{bankCode} — Get bank by its short code (e.g. "SBIN"). */
     @GetMapping("/code/{bankCode}")
     public ResponseEntity<BankResponseDTO> getBankByCode(@PathVariable String bankCode) {
-        logger.info("GET /code/{}", bankCode);
+        logger.info("Received request to fetch bank with code : {}", bankCode);
         return ResponseEntity.ok(bankService.getBankByCode(bankCode));
     }
 
     /** GET /api/v1/banks — List all registered banks. */
     @GetMapping
     public ResponseEntity<List<BankResponseDTO>> getAllBanks() {
-        logger.info("GET /");
+        logger.info("Received request to fetch all banks");
         return ResponseEntity.ok(bankService.getAllBanks());
     }
 
@@ -67,14 +67,14 @@ public class BankController {
     public ResponseEntity<BankResponseDTO> updateBankStatus(
             @PathVariable UUID bankId,
             @RequestParam BankStatus status) {
-        logger.info("PUT /{}/status - newStatus={}", bankId, status);
+        logger.info("Received request to update bank status for id : {} to status : {}", bankId, status);
         return ResponseEntity.ok(bankService.updateBankStatus(bankId, status));
     }
 
     /** DELETE /api/v1/banks/{bankId} — Remove a bank record. */
     @DeleteMapping("/{bankId}")
     public ResponseEntity<Void> deleteBank(@PathVariable UUID bankId) {
-        logger.info("DELETE /{}", bankId);
+        logger.info("Received request to delete bank with id : {}", bankId);
         bankService.deleteBank(bankId);
         return ResponseEntity.noContent().build();
     }

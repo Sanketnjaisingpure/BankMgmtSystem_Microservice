@@ -53,7 +53,7 @@ class CustomerControllerTest {
         customerDTO.setFirstName("John");
         customerDTO.setLastName("Doe");
         customerDTO.setEmail("john.doe@example.com");
-        customerDTO.setMobileNumber("1234567890");
+        customerDTO.setPhoneNumber("1234567890");
         customerDTO.setCreatedAt(LocalDateTime.now());
         customerDTO.setUpdatedAt(LocalDateTime.now());
 
@@ -61,14 +61,14 @@ class CustomerControllerTest {
         createCustomerDTO.setFirstName("John");
         createCustomerDTO.setLastName("Doe");
         createCustomerDTO.setEmail("john.doe@example.com");
-        createCustomerDTO.setMobileNumber("1234567890");
+        createCustomerDTO.setPhoneNumber("1234567890");
         createCustomerDTO.setPasswordHash("password123");
 
         updateCustomerDTO = new UpdateCustomerDTO();
         updateCustomerDTO.setFirstName("John");
         updateCustomerDTO.setLastName("Updated");
         updateCustomerDTO.setEmail("john.doe@example.com");
-        updateCustomerDTO.setMobileNumber("0987654321");
+        updateCustomerDTO.setPhoneNumber("0987654321");
     }
 
     // ==========================================
@@ -165,7 +165,7 @@ class CustomerControllerTest {
         CreateCustomerDTO invalidDTO = new CreateCustomerDTO();
         invalidDTO.setLastName("Doe");
         invalidDTO.setEmail("john.doe@example.com");
-        invalidDTO.setMobileNumber("1234567890");
+        invalidDTO.setPhoneNumber("1234567890");
         invalidDTO.setPasswordHash("password123");
 
         // When & Then
@@ -185,7 +185,7 @@ class CustomerControllerTest {
         invalidDTO.setFirstName("John");
         invalidDTO.setLastName("Doe");
         invalidDTO.setEmail("invalid-email");
-        invalidDTO.setMobileNumber("1234567890");
+        invalidDTO.setPhoneNumber("1234567890");
         invalidDTO.setPasswordHash("password123");
 
         // When & Then
@@ -204,7 +204,7 @@ class CustomerControllerTest {
         invalidDTO.setFirstName("John");
         invalidDTO.setLastName("Doe");
         invalidDTO.setEmail("john.doe@example.com");
-        invalidDTO.setMobileNumber("1234567890");
+        invalidDTO.setPhoneNumber("1234567890");
         invalidDTO.setPasswordHash("12345"); // Less than 6 characters
 
         // When & Then
@@ -236,7 +236,7 @@ class CustomerControllerTest {
         updatedDTO.setFirstName("John");
         updatedDTO.setLastName("Updated");
         updatedDTO.setEmail("john.doe@example.com");
-        updatedDTO.setMobileNumber("0987654321");
+        updatedDTO.setPhoneNumber("0987654321");
         updatedDTO.setCreatedAt(LocalDateTime.now());
         updatedDTO.setUpdatedAt(LocalDateTime.now());
 

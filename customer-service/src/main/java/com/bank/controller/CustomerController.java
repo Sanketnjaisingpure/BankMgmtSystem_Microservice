@@ -41,7 +41,7 @@ public class CustomerController {
 
     @PostMapping("/create-customer")
     public ResponseEntity<CustomerDTO> createCustomer(@RequestBody @Valid CreateCustomerDTO customerDTO) {
-        logger.info("Received request to create customer with mobile number : {} and email : {} ",customerDTO.getMobileNumber(), customerDTO.getEmail());
+        logger.info("Received request to create customer with mobile number : {} and email : {} ",customerDTO.getPhoneNumber(), customerDTO.getEmail());
         CustomerDTO dto = customerService.createCustomer(customerDTO);
         return ResponseEntity.status(HttpStatus.CREATED).body(dto);
     }
@@ -49,7 +49,7 @@ public class CustomerController {
 
     @PostMapping("/update-customer")
     public ResponseEntity<CustomerDTO> updateCustomer(@RequestBody UpdateCustomerDTO customerDTO) {
-        logger.info("Received request to update customer with mobile number : {} and email : {} ",customerDTO.getMobileNumber(), customerDTO.getEmail());
+        logger.info("Received request to update customer with mobile number : {} and email : {} ",customerDTO.getPhoneNumber(), customerDTO.getEmail());
         CustomerDTO dto = customerService.updateCustomer(customerDTO);
         return ResponseEntity.status(HttpStatus.OK).body(dto);
     }

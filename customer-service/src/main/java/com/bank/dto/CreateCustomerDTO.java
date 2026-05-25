@@ -28,5 +28,5 @@ public class CreateCustomerDTO {
 
     @NotNull(message = "Mobile number is required")
     @Size(min = 10, max = 10)
-    private String mobileNumber;
+    private String phoneNumber;
 }

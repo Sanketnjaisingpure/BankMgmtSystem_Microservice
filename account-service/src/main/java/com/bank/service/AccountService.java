@@ -5,13 +5,17 @@ package com.bank.service;
 import com.bank.ENUM.*;
 import com.bank.config.KafkaConstants;
 import com.bank.config.MapperConfig;
-import com.bank.dto.*;
+import com.bank.dto.CustomerDTO;
+import com.bank.dto.AccountRequestDTO;
+import com.bank.dto.PageResponse;
+import com.bank.dto.AccountResponseDTO;
+import com.bank.dto.BankDTO;
+import com.bank.dto.TransactionRecordRequestDTO;
 import com.bank.event.AccountCreationEvent;
 import com.bank.event.TransactionEvent;
 import com.bank.exception.ResourceNotFoundException;
 import com.bank.feign.CustomerFeignService;
 import com.bank.feign.BankFeignService;
-import com.bank.dto.BankDTO;
 import com.bank.helper.notificationEventHelper;
 import com.bank.model.Account;
 import com.bank.model.IdempotencyRequest;
@@ -158,7 +162,7 @@ public class AccountService {
         account.setBalance(accountDto.balance());
         account.setStatus(AccountStatus.ACTIVE);
 
-        String accountNumber = generateAccountNumber(customerDTO.getMobileNumber());
+        String accountNumber = generateAccountNumber(customerDTO.getPhoneNumber());
         account.setAccountNumber(accountNumber);
         logger.info("Generated accountNumber={} for customerId={}", accountNumber, accountDto.customerId());
 
@@ -388,7 +392,7 @@ public class AccountService {
 
     // Transfer amount from One account to another
     @Transactional
-    public AccountResponseDTO transferAmount(TransactionRecordRequestDTO request,String idempotencyKey) {
+    public AccountResponseDTO transferAmount(TransactionRecordRequestDTO request, String idempotencyKey) {
 
         logger.info("Processing transfer: sourceAccount={}, destinationAccount={}, amount={}, idempotencyKey={}",
                 request.sourceAccountNumber(),

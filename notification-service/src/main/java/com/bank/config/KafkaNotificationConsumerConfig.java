@@ -7,7 +7,7 @@ import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.listener.ContainerProperties;
 
 @Configuration
-public class KafkaConsumerConfig {
+public class KafkaNotificationConsumerConfig {
 
     //    Acknowledgment done by manually
     @Bean

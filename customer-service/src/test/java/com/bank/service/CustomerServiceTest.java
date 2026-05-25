@@ -75,7 +75,7 @@ class CustomerServiceTest {
         customerDTO.setFirstName("John");
         customerDTO.setLastName("Doe");
         customerDTO.setEmail("john.doe@example.com");
-        customerDTO.setMobileNumber("1234567890");
+        customerDTO.setPhoneNumber("1234567890");
         customerDTO.setCreatedAt(LocalDateTime.now());
         customerDTO.setUpdatedAt(LocalDateTime.now());
 
@@ -83,14 +83,14 @@ class CustomerServiceTest {
         createCustomerDTO.setFirstName("John");
         createCustomerDTO.setLastName("Doe");
         createCustomerDTO.setEmail("john.doe@example.com");
-        createCustomerDTO.setMobileNumber("1234567890");
+        createCustomerDTO.setPhoneNumber("1234567890");
         createCustomerDTO.setPasswordHash("password123");
 
         updateCustomerDTO = new UpdateCustomerDTO();
         updateCustomerDTO.setFirstName("John");
         updateCustomerDTO.setLastName("Updated");
         updateCustomerDTO.setEmail("john.doe@example.com");
-        updateCustomerDTO.setMobileNumber("0987654321");
+        updateCustomerDTO.setPhoneNumber("0987654321");
 
         when(mapperConfig.modelMapper()).thenReturn(modelMapper);
     }
@@ -335,7 +335,8 @@ class CustomerServiceTest {
         partialUpdate.setEmail("john.doe@example.com");
         partialUpdate.setFirstName("Jane");
         partialUpdate.setLastName(null);
-        partialUpdate.setMobileNumber(null);
+        partialUpdate.setPhoneNumber(null);
+        partialUpdate.setPhoneNumber(null);
 
         when(customerRepository.findByEmail("john.doe@example.com")).thenReturn(customer);
         when(customerRepository.save(any(Customer.class))).thenReturn(customer);

@@ -15,7 +15,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 @Configuration
-public class KafkaProducerConfig {
+public class KafkaAccountProducerConfig {
     @Bean
     public NewTopic accountCreationTopic() {
         return TopicBuilder.name(KafkaConstants.ACCOUNT_CREATION_TOPIC)
