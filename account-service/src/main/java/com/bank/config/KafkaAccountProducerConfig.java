@@ -33,6 +33,14 @@ public class KafkaProducerConfig {
     }
 
     @Bean
+    public NewTopic transactionPaymentTopic(){
+        return TopicBuilder.name(KafkaConstants.TRANSACTION_PAYMENT_TOPIC)
+                .partitions(2)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
     public NewTopic transactionTopic(){
 
         return TopicBuilder.name(KafkaConstants.TRANSACTION_TOPIC)
