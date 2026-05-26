@@ -18,7 +18,7 @@ import java.util.UUID;
 @NoArgsConstructor
 public class CreditCardApplicationEvent {
 
-    private UUID cardId;
+//    private UUID cardId;
 
     private UUID customerId;
 

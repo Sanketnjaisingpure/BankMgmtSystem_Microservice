@@ -88,7 +88,7 @@ class CustomerControllerTest {
                 .andExpect(jsonPath("$.firstName", is("John")))
                 .andExpect(jsonPath("$.lastName", is("Doe")))
                 .andExpect(jsonPath("$.email", is(email)))
-                .andExpect(jsonPath("$.mobileNumber", is("1234567890")));
+                .andExpect(jsonPath("$.phoneNumber", is("1234567890")));
 
         verify(customerService, times(1)).findByEmail(email);
     }
@@ -137,7 +137,7 @@ class CustomerControllerTest {
                 .andExpect(jsonPath("$.firstName", is("John")))
                 .andExpect(jsonPath("$.lastName", is("Doe")))
                 .andExpect(jsonPath("$.email", is("john.doe@example.com")))
-                .andExpect(jsonPath("$.mobileNumber", is("1234567890")));
+                .andExpect(jsonPath("$.phoneNumber", is("1234567890")));
 
         verify(customerService, times(1)).createCustomer(any(CreateCustomerDTO.class));
     }
@@ -249,7 +249,7 @@ class CustomerControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.firstName", is("John")))
                 .andExpect(jsonPath("$.lastName", is("Updated")))
-                .andExpect(jsonPath("$.mobileNumber", is("0987654321")));
+                .andExpect(jsonPath("$.phoneNumber", is("0987654321")));
 
         verify(customerService, times(1)).updateCustomer(any(UpdateCustomerDTO.class));
     }

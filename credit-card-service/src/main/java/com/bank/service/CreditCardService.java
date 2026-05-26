@@ -3,7 +3,10 @@ package com.bank.service;
 import com.bank.ENUM.*;
 import com.bank.config.KafkaConstants;
 import com.bank.config.MapperConfig;
-import com.bank.dto.*;
+import com.bank.dto.CreditCardRequestDTO;
+import com.bank.dto.CreditCardResponseDTO;
+import com.bank.dto.CreditCardTransactionDTO;
+import com.bank.dto.CustomerDTO;
 import com.bank.dto.accounts.AccountResponseDTO;
 import com.bank.event.CreditCardApplicationEvent;
 import com.bank.event.CreditCardStatusEvent;
@@ -103,7 +106,6 @@ public class CreditCardService {
 
         // Step 3: Build and persist the credit card entity
         CreditCard card = new CreditCard();
-        card.setCardId(UUID.randomUUID());
         card.setCardNumber(generateMaskedCardNumber());
         card.setCustomerId(request.customerId());
         card.setAccountNumber(request.accountNumber());
@@ -486,7 +488,6 @@ public class CreditCardService {
     private void publishApplicationEvent(CreditCard card, String email) {
         try {
             CreditCardApplicationEvent event = new CreditCardApplicationEvent();
-            event.setCardId(card.getCardId());
             event.setCustomerId(card.getCustomerId());
             event.setEmail(email);
             event.setCreditLimit(card.getCreditLimit());
@@ -599,7 +600,6 @@ public class CreditCardService {
     private void publishTransactionEvent(CreditCard card, String type, BigDecimal amount, String desc) {
         try {
             CreditCardTransactionEvent event = new CreditCardTransactionEvent();
-            event.setCardId(card.getCardId());
             event.setCustomerId(card.getCustomerId());
             event.setTransactionType(type);
             event.setAmount(amount);

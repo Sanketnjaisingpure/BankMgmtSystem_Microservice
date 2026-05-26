@@ -17,8 +17,6 @@ import java.util.UUID;
 @NoArgsConstructor
 public class LoanStatusEvent {
 
-    private UUID loanId;
-
     private UUID customerId;
 
     private String status;

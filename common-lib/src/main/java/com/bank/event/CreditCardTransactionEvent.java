@@ -18,8 +18,6 @@ import java.util.UUID;
 @NoArgsConstructor
 public class CreditCardTransactionEvent {
 
-    private UUID cardId;
-
     private UUID customerId;
 
     /** CHARGE or PAYMENT */

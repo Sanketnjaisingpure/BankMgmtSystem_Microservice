@@ -123,7 +123,6 @@ public class LoanService {
         // Step 4: Build and persist the loan entity
         // EMI calculation is deferred to the approval step to keep application fast
         Loan loan = new Loan();
-        loan.setLoanId(UUID.randomUUID());
         loan.setCustomerId(loanRequestDTO.customerId());
         loan.setAccountNumber(loanRequestDTO.accountNumber());
         loan.setLoanAmount(loanRequestDTO.loanAmount());
@@ -492,7 +491,6 @@ public class LoanService {
     private void sendStatusEvent(Loan loan, String status, String message) {
         try {
             LoanStatusEvent event = new LoanStatusEvent();
-            event.setLoanId(loan.getLoanId());
             event.setCustomerId(loan.getCustomerId());
             event.setStatus(status);
             event.setMessage(message);
