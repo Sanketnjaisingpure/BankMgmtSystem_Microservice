@@ -36,7 +36,6 @@ public class CustomerService {
         this.mapperConfig = mapperConfig;
     }
 
-// use logger method
     // Handle Customer properly
     public CustomerDTO findByEmail(String email) {
         logger.info("Fetching customer by email: {}", email);
@@ -67,12 +66,12 @@ public class CustomerService {
 
     // Add or Create customer
     public CustomerDTO createCustomer(CreateCustomerDTO createCustomerDTO) {
-        logger.info("Creating customer with | Mobile number {} | email {}" , createCustomerDTO.getMobileNumber() , createCustomerDTO.getEmail());
+        logger.info("Creating customer with | Mobile number {} | email {}" , createCustomerDTO.getPhoneNumber() , createCustomerDTO.getEmail());
         Customer customer = convertToEntity(createCustomerDTO);
 
-        if(customerRepository.existByEmailOrMobileNumber(createCustomerDTO.getEmail(), createCustomerDTO.getMobileNumber())!=null){
-            logger.error("Customer already exist  with Mobile number {} or email {} " , createCustomerDTO.getMobileNumber() , createCustomerDTO.getEmail());
-            throw new DuplicateResourceException(createCustomerDTO.getEmail(), createCustomerDTO.getMobileNumber());
+        if(customerRepository.existByEmailOrPhoneNumber(createCustomerDTO.getEmail(), createCustomerDTO.getPhoneNumber())!=null){
+            logger.error("Customer already exist  with Mobile number {} or email {} " , createCustomerDTO.getPhoneNumber() , createCustomerDTO.getEmail());
+            throw new DuplicateResourceException(createCustomerDTO.getEmail(), createCustomerDTO.getPhoneNumber());
         }
 
         // Handle exception for email and mobile number
@@ -84,15 +83,16 @@ public class CustomerService {
             logger.info("Customer created successfully with | Id {} " ,customer.getCustomerId());
         }
         catch (Exception ex){
-            logger.error("Failed to create customer with | Mobile number {} | email {}" , createCustomerDTO.getMobileNumber() , createCustomerDTO.getEmail());
+            logger.error("Failed to create customer with | Mobile number {} | email {}" , createCustomerDTO.getPhoneNumber() , createCustomerDTO.getEmail());
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to create customer");
         }
+
+        // need to implement kafka here
          return convertToDTO(customer);
 
     }
 
     // update customer Info
-
     public CustomerDTO updateCustomer(UpdateCustomerDTO updateCustomerDTO) {
         logger.info("Updating customer: email={}", updateCustomerDTO.getEmail());
         Customer customer = customerRepository.findByEmail(updateCustomerDTO.getEmail());
@@ -107,15 +107,15 @@ public class CustomerService {
         try {
             customer.setFirstName(updateCustomerDTO.getFirstName());
             customer.setLastName(updateCustomerDTO.getLastName());
-            customer.setMobileNumber(updateCustomerDTO.getMobileNumber());
+            customer.setPhoneNumber(updateCustomerDTO.getPhoneNumber());
             customer.setUpdatedAt(LocalDateTime.now());
             customerRepository.save(customer);
             logger.info("Customer updated successfully: customerId={}, mobileNumber={}, email={}",
-                    customer.getCustomerId(), updateCustomerDTO.getMobileNumber(), updateCustomerDTO.getEmail());
+                    customer.getCustomerId(), updateCustomerDTO.getPhoneNumber(), updateCustomerDTO.getEmail());
         }
         catch (Exception ex) {
             logger.error("Failed to update customer: mobileNumber={}, email={}",
-                    updateCustomerDTO.getMobileNumber(), updateCustomerDTO.getEmail(), ex);
+                    updateCustomerDTO.getPhoneNumber(), updateCustomerDTO.getEmail(), ex);
             throw new RuntimeException("Failed to update customer");
         }
 

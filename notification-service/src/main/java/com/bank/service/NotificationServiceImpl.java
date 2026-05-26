@@ -68,14 +68,16 @@ public class NotificationServiceImpl implements NotificationService {
         try {
             Notification notification = Notification.builder()
                     .customerId(event.getCustomerId())
-                    .sourceService(SourceService.valueOf(event.getSourceService()))
-                    .notificationType(NotificationType.valueOf(event.getNotificationType()))
+                    .sourceService(event.getSourceService())
+                    .notificationType(event.getNotificationType())
                     .channelType(ChannelType.EMAIL)
                     .referenceId(event.getReferenceId())
                     .subject(event.getSubject())
                     .message(event.getMessage())
                     .status(NotificationStatus.SENT)
                     .sentAt(LocalDateTime.now())
+                    .createdAt(event.getCreatedAt())
+                    .metadata("metadata")
                     .build();
 
             notificationRepository.save(notification);
@@ -107,8 +109,8 @@ public class NotificationServiceImpl implements NotificationService {
         try {
             Notification notification = Notification.builder()
                     .customerId(event.getCustomerId())
-                    .sourceService(SourceService.valueOf(event.getSourceService()))
-                    .notificationType(NotificationType.valueOf(event.getNotificationType()))
+                    .sourceService(event.getSourceService())
+                    .notificationType(event.getNotificationType())
                     .channelType(ChannelType.EMAIL)
                     .referenceId(event.getReferenceId())
                     .subject(event.getSubject())
@@ -151,8 +153,8 @@ public class NotificationServiceImpl implements NotificationService {
         try {
             Notification notification = Notification.builder()
                     .customerId(event.getCustomerId())
-                    .sourceService(SourceService.valueOf(event.getSourceService()))
-                    .notificationType(NotificationType.valueOf(event.getNotificationType()))
+                    .sourceService(event.getSourceService())
+                    .notificationType(event.getNotificationType())
                     .channelType(ChannelType.EMAIL)
                     .referenceId(event.getReferenceId())
                     .subject(event.getSubject())
@@ -190,8 +192,8 @@ public class NotificationServiceImpl implements NotificationService {
         try {
             Notification notification = Notification.builder()
                     .customerId(event.getCustomerId())
-                    .sourceService(SourceService.valueOf(event.getSourceService()))
-                    .notificationType(NotificationType.valueOf(event.getNotificationType()))
+                    .sourceService(event.getSourceService())
+                    .notificationType(event.getNotificationType())
                     .channelType(ChannelType.EMAIL)
                     .referenceId(event.getReferenceId())
                     .subject(event.getSubject())
@@ -229,8 +231,8 @@ public class NotificationServiceImpl implements NotificationService {
         try {
             Notification notification = Notification.builder()
                     .customerId(event.getCustomerId())
-                    .sourceService(SourceService.valueOf(event.getSourceService()))
-                    .notificationType(NotificationType.valueOf(event.getNotificationType()))
+                    .sourceService(event.getSourceService())
+                    .notificationType(event.getNotificationType())
                     .channelType(ChannelType.EMAIL)
                     .referenceId(event.getReferenceId())
                     .subject(event.getSubject())
@@ -273,8 +275,8 @@ public class NotificationServiceImpl implements NotificationService {
         try {
             Notification notification = Notification.builder()
                     .customerId(event.getCustomerId())
-                    .sourceService(SourceService.valueOf(event.getSourceService()))
-                    .notificationType(NotificationType.valueOf(event.getNotificationType()))
+                    .sourceService(event.getSourceService())
+                    .notificationType(event.getNotificationType())
                     .channelType(ChannelType.EMAIL)
                     .referenceId(event.getReferenceId())
                     .subject(event.getSubject())
@@ -313,8 +315,8 @@ public class NotificationServiceImpl implements NotificationService {
         try {
             Notification notification = Notification.builder()
                     .customerId(event.getCustomerId())
-                    .sourceService(SourceService.valueOf(event.getSourceService()))
-                    .notificationType(NotificationType.valueOf(event.getNotificationType()))
+                    .sourceService(event.getSourceService())
+                    .notificationType(event.getNotificationType())
                     .channelType(ChannelType.EMAIL)
                     .referenceId(event.getReferenceId())
                     .subject(event.getSubject())
@@ -353,8 +355,8 @@ public class NotificationServiceImpl implements NotificationService {
         try {
             Notification notification = Notification.builder()
                     .customerId(event.getCustomerId())
-                    .sourceService(SourceService.valueOf(event.getSourceService()))
-                    .notificationType(NotificationType.valueOf(event.getNotificationType()))
+                    .sourceService(event.getSourceService())
+                    .notificationType(event.getNotificationType())
                     .channelType(ChannelType.EMAIL)
                     .referenceId(event.getReferenceId())
                     .subject(event.getSubject())
@@ -374,6 +376,49 @@ public class NotificationServiceImpl implements NotificationService {
             logger.error("Failed to process CC_TRANSACTION event: cardId={}, type={}",
                     event.getCardId(), event.getTransactionType(), e);
             // ❗ No ACK → retry will happen
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  KAFKA LISTENERS — Bank Service Events
+    // ════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Handles bank registration events from bank-service.
+     * Reads all notification-specific fields directly from the event.
+     */
+    @KafkaListener(
+            topics = KafkaConstants.BANK_REGISTRATION_TOPIC,
+            groupId = KafkaConstants.BANK_REGISTRATION_GROUP
+    )
+    public void handleBankRegistrationEvent(BankRegistrationEvent event, Acknowledgment ack) {
+
+        logger.info("Received BANK_REGISTRATION event: bankId={}, bankName={}, notificationType={}",
+                event.getBankId(), event.getBankName(), event.getNotificationType());
+
+        try {
+            Notification notification = Notification.builder()
+                    .sourceService(SourceService.valueOf(event.getSourceService()))
+                    .notificationType(NotificationType.valueOf(event.getNotificationType()))
+                    .customerId(UUID.randomUUID())
+                    .channelType(ChannelType.EMAIL)
+                    .referenceId(event.getReferenceId())
+                    .subject(event.getSubject())
+                    .message(event.getMessage())
+                    .metadata(event.getMetadata())
+                    .status(NotificationStatus.SENT)
+                    .sentAt(LocalDateTime.now())
+                    .build();
+
+            notificationRepository.save(notification);
+
+            ack.acknowledge();
+            logger.info("ACK success: BANK_REGISTRATION notification saved for bankId={}, referenceId={}",
+                    event.getBankId(), event.getReferenceId());
+
+        } catch (Exception e) {
+            logger.error("Failed to process BANK_REGISTRATION event: bankId={}", event.getBankId(), e);
+            // ❗ No ACK → Kafka will retry automatically
         }
     }
 

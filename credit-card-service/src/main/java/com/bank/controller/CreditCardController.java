@@ -36,7 +36,7 @@ public class CreditCardController {
     public ResponseEntity<CreditCardResponseDTO> applyCard(@RequestBody CreditCardRequestDTO request) {
         logger.info("Received request to apply for credit card: customerId={}", request.customerId());
         CreditCardResponseDTO response = creditCardService.applyCard(request);
-        logger.info("Credit card application created: cardId={}", response.cardId());
+        logger.info("Credit card application created: cardId={}", response.getCardId());
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
@@ -55,8 +55,11 @@ public class CreditCardController {
     /** Reject a pending credit card application. */
     @PutMapping("/{cardId}/reject")
     public ResponseEntity<CreditCardResponseDTO> rejectCard(@PathVariable UUID cardId) {
+
         logger.info("Received request to reject card: cardId={}", cardId);
+
         CreditCardResponseDTO response = creditCardService.rejectCard(cardId);
+
         return ResponseEntity.ok(response);
     }
 

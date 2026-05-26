@@ -4,6 +4,7 @@ package com.bank.handler;
 import com.bank.exception.BadRequestException;
 import com.bank.exception.DuplicateResourceException;
 import com.bank.exception.ResourceNotFoundException;
+import com.bank.exception.ServiceException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -262,6 +263,25 @@ public class GlobalException {
                 .build();
 
         return new ResponseEntity<>(errorResponse, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+    @ExceptionHandler(ServiceException.class)
+    public ResponseEntity<ErrorResponse> handleServiceException(
+            ServiceException ex,
+            HttpServletRequest request) {
+
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(ex.getStatus())
+                .error(HttpStatus.valueOf(ex.getStatus()).getReasonPhrase())
+                .message(ex.getMessage())
+                .path(request.getRequestURI())
+                .build();
+
+        return new ResponseEntity<>(
+                errorResponse,
+                HttpStatus.valueOf(ex.getStatus())
+        );
     }
 
 }

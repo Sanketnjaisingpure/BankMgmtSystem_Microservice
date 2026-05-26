@@ -14,6 +14,7 @@ import java.util.UUID;
 @NoArgsConstructor
 @Getter
 @Setter
+@Table(name = "account", schema = "account_db")
 public class Account {
 
     @Id
@@ -24,12 +25,22 @@ public class Account {
     @NotNull
     private UUID customerId;
 
+    /**
+     * Reference to the bank (from bank-service) under which this account was opened.
+     * Mandatory — every account must be linked to a registered ACTIVE bank.
+     * Not a DB foreign key since Bank lives in a separate database (bank_db).
+     */
+    @Column(nullable = false)
+    @NotNull
+    private UUID bankId;
+
     @Column(unique = true, nullable = false)
     @NotNull
     private String accountNumber;
 
     @Enumerated(EnumType.STRING)
     @NotNull
+    @Column(unique = true)
     private AccountType accountType;
 
     @Enumerated(EnumType.STRING)

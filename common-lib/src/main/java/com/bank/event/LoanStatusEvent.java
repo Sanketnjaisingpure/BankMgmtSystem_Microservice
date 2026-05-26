@@ -1,5 +1,7 @@
 package com.bank.event;
 
+import com.bank.ENUM.NotificationType;
+import com.bank.ENUM.SourceService;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -15,8 +17,6 @@ import java.util.UUID;
 @NoArgsConstructor
 public class LoanStatusEvent {
 
-    private UUID loanId;
-
     private UUID customerId;
 
     private String status;
@@ -26,10 +26,10 @@ public class LoanStatusEvent {
     // ── Notification-specific fields ──
 
     /** Which service triggered this notification (e.g., "LOAN_SERVICE") */
-    private String sourceService;
+    private SourceService sourceService;
 
     /** The type of notification (e.g., "LOAN_APPROVED", "LOAN_REJECTED") */
-    private String notificationType;
+    private NotificationType notificationType;
 
     /** Short summary/title for the notification */
     private String subject;

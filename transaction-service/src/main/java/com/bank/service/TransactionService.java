@@ -3,15 +3,12 @@ package com.bank.service;
 
 import com.bank.config.KafkaConstants;
 import com.bank.event.TransactionEvent;
-import com.bank.model.Transaction;
+import com.bank.model.Bank_Transaction;
 import com.bank.repository.TransactionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.kafka.annotation.DltHandler;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.annotation.RetryableTopic;
 import org.springframework.kafka.support.Acknowledgment;
-import org.springframework.retry.annotation.Backoff;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 
@@ -98,7 +95,7 @@ public class TransactionService {
                 event.getSourceAccountNumber(),
                 event.getDestinationAccountNumber());
 
-        Transaction transaction = new Transaction();
+        Bank_Transaction transaction = new Bank_Transaction();
         transaction.setTransactionDescription(event.getTransactionDescription());
         transaction.setTransactionType(event.getTransactionType());
         transaction.setAmount(event.getAmount());
@@ -109,13 +106,15 @@ public class TransactionService {
 
         transactionRepository.save(transaction);
 
-        logger.info("Transaction saved successfully: type={}, amount={}, sourceAccount={}",
+        logger.info("Bank_Transaction saved successfully: type={}, amount={}, sourceAccount={}",
                 event.getTransactionType(),
                 event.getAmount(),
                 event.getSourceAccountNumber());
     }
 
-    /*@DltHandler
+    /*
+
+    @DltHandler
     public void handleDlt(TransactionEvent event) {
 
         logger.error("DLT received: eventId={}, storing for manual review", event.getEventId());

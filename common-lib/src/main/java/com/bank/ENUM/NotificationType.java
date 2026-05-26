@@ -28,5 +28,8 @@ public enum NotificationType {
     CREDIT_CARD_UNBLOCKED,
     CREDIT_CARD_CLOSED,
     CREDIT_CARD_CHARGE,
-    CREDIT_CARD_PAYMENT
+    CREDIT_CARD_PAYMENT,
+
+    // ── Bank Service Events ──
+    BANK_REGISTERED
 }

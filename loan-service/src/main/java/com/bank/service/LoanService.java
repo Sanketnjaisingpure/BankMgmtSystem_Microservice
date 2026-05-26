@@ -1,7 +1,8 @@
 package com.bank.service;
 
-import com.bank.ENUM.LoanStatus;
+import com.bank.ENUM.*;
 import com.bank.config.KafkaConstants;
+import com.bank.config.MapperConfig;
 import com.bank.dto.CustomerDTO;
 import com.bank.dto.LoanRequestDTO;
 import com.bank.dto.LoanResponseDTO;
@@ -9,6 +10,7 @@ import com.bank.dto.accounts.AccountResponseDTO;
 import com.bank.event.LoanApplicationEvent;
 import com.bank.event.LoanDisbursementEvent;
 import com.bank.event.LoanStatusEvent;
+import com.bank.event.TransactionEvent;
 import com.bank.exception.ResourceNotFoundException;
 import com.bank.feign.AccountFeignService;
 import com.bank.feign.customers.CustomerFeignService;
@@ -56,6 +58,7 @@ public class LoanService {
     private final CustomerFeignService customerFeignService;
     private final LoanRepository loanRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final MapperConfig mapperConfig;
 
     /** Default annual interest rate (%), configurable via application properties. */
     @Value("${loan.default.interest-rate:12.5}")
@@ -64,10 +67,12 @@ public class LoanService {
     public LoanService(AccountFeignService accountFeignService,
                        CustomerFeignService customerFeignService,
                        LoanRepository loanRepository,
+                       MapperConfig mapperConfig,
                        KafkaTemplate<String, Object> kafkaTemplate) {
         this.accountFeignService = accountFeignService;
         this.customerFeignService = customerFeignService;
         this.loanRepository = loanRepository;
+        this.mapperConfig = mapperConfig;
         this.kafkaTemplate = kafkaTemplate;
     }
 
@@ -118,7 +123,6 @@ public class LoanService {
         // Step 4: Build and persist the loan entity
         // EMI calculation is deferred to the approval step to keep application fast
         Loan loan = new Loan();
-        loan.setLoanId(UUID.randomUUID());
         loan.setCustomerId(loanRequestDTO.customerId());
         loan.setAccountNumber(loanRequestDTO.accountNumber());
         loan.setLoanAmount(loanRequestDTO.loanAmount());
@@ -254,14 +258,27 @@ public class LoanService {
                     "Loan cannot be disbursed: EMI amount not computed. Please re-approve the loan.");
         }
 
-        // Step 3: Credit the loan amount to the customer's account via Account Service
+        // Step 3: Validate that the target account exists and is ACTIVE before depositing
+        AccountResponseDTO account = getAccountDetails(loan.getAccountNumber());
+        if (account.getStatus() != com.bank.ENUM.accounts.AccountStatus.ACTIVE) {
+            logger.error("Disbursement blocked — account is not ACTIVE: loanId={}, accountNumber={}, status={}",
+                    loanId, loan.getAccountNumber(), account.getStatus());
+            throw new IllegalStateException(
+                    "Loan cannot be disbursed: account " + loan.getAccountNumber()
+                    + " is " + account.getStatus() + ". Only ACTIVE accounts can receive disbursements.");
+        }
+        logger.info("Account validated for disbursement: accountNumber={}, status={}",
+                loan.getAccountNumber(), account.getStatus());
+
+        // Step 4: Credit the loan amount to the customer's account via Account Service
         // Using loanId as the idempotency key to prevent duplicate credits on retries
+        String idempotencyKey = loanId.toString();
         try {
-            logger.info("Crediting loan amount to account: loanId={}, accountNumber={}, amount={}",
-                    loanId, loan.getAccountNumber(), loan.getLoanAmount());
+            logger.info("Crediting loan amount to account: loanId={}, accountNumber={}, amount={}, idempotencyKey={}",
+                    loanId, loan.getAccountNumber(), loan.getLoanAmount(), idempotencyKey);
 
             accountFeignService.depositCredit(
-                    loanId.toString(),
+                    idempotencyKey,
                     loan.getAccountNumber(),
                     loan.getLoanAmount()
             );
@@ -276,7 +293,7 @@ public class LoanService {
                     "Loan disbursement failed: unable to credit amount to account " + loan.getAccountNumber(), ex);
         }
 
-        // Step 4: Mark loan as ACTIVE only after successful fund transfer
+        // Step 5: Mark loan as ACTIVE only after successful fund transfer
         loan.setLoanStatus(LoanStatus.ACTIVE);
         loan.setUpdatedAt(LocalDateTime.now());
 
@@ -284,8 +301,11 @@ public class LoanService {
         logger.info("Loan disbursed and set ACTIVE: loanId={}, amount={}, accountNumber={}",
                 loanId, loan.getLoanAmount(), loan.getAccountNumber());
 
-        // Step 5: Publish disbursement Kafka event for notification
+        // Step 6: Publish disbursement Kafka event for notification
         sendDisbursementEvent(loan);
+
+        // Step 7: Publish transaction event so transaction-service records the loan disbursement
+        sendDisbursementTransactionEvent(loan);
 
         return toResponseDTO(loan);
     }
@@ -411,16 +431,7 @@ public class LoanService {
      * Maps a {@link Loan} entity to a {@link LoanResponseDTO}.
      */
     private LoanResponseDTO toResponseDTO(Loan loan) {
-        return new LoanResponseDTO(
-                loan.getLoanId(),
-                loan.getCustomerId(),
-                loan.getAccountNumber(),
-                loan.getLoanAmount(),
-                loan.getEmiAmount(),
-                loan.getInterestRate(),
-                loan.getTenureMonths(),
-                loan.getLoanStatus().name()
-        );
+        return mapperConfig.modelMapper().map(loan , LoanResponseDTO.class);
     }
 
     // ═══════════════════════════════════════════════════
@@ -446,8 +457,8 @@ public class LoanService {
                     + " submitted successfully. Loan ID: " + loan.getLoanId());
 
             // ── Notification-specific fields ──
-            event.setSourceService("LOAN_SERVICE");
-            event.setNotificationType("LOAN_APPLIED");
+            event.setSourceService(SourceService.LOAN_SERVICE);
+            event.setNotificationType(NotificationType.LOAN_APPLIED);
             event.setSubject("Loan Application Submitted");
             event.setReferenceId(loan.getLoanId().toString());
             event.setMetadata(String.format(
@@ -480,14 +491,13 @@ public class LoanService {
     private void sendStatusEvent(Loan loan, String status, String message) {
         try {
             LoanStatusEvent event = new LoanStatusEvent();
-            event.setLoanId(loan.getLoanId());
             event.setCustomerId(loan.getCustomerId());
             event.setStatus(status);
             event.setMessage(message);
 
             // ── Notification-specific fields ──
-            event.setSourceService("LOAN_SERVICE");
-            event.setNotificationType("APPROVED".equals(status) ? "LOAN_APPROVED" : "LOAN_REJECTED");
+            event.setSourceService(SourceService.LOAN_SERVICE);
+            event.setNotificationType("APPROVED".equals(status) ? NotificationType.LOAN_APPROVED : NotificationType.LOAN_REJECTED);
             event.setSubject("Loan " + status);
             event.setReferenceId(loan.getLoanId().toString());
             event.setMetadata(String.format(
@@ -527,8 +537,8 @@ public class LoanService {
                     + " has been DISBURSED. Amount: " + loan.getLoanAmount());
 
             // ── Notification-specific fields ──
-            event.setSourceService("LOAN_SERVICE");
-            event.setNotificationType("LOAN_DISBURSED");
+            event.setSourceService(SourceService.LOAN_SERVICE);
+            event.setNotificationType(NotificationType.LOAN_DISBURSED);
             event.setSubject("Loan Disbursed");
             event.setReferenceId(loan.getLoanId().toString());
             event.setMetadata(String.format(
@@ -548,6 +558,47 @@ public class LoanService {
                     });
         } catch (Exception e) {
             logger.error("Failed to publish loan disbursement event: loanId={}", loan.getLoanId(), e);
+        }
+    }
+
+    /**
+     * Publishes a {@link TransactionEvent} to the transaction-service via Kafka
+     * so it independently records the loan disbursement as a DEPOSIT transaction.
+     *
+     * <p>This is separate from the account-service's own transaction event —
+     * it ensures the loan disbursement is explicitly captured even if the
+     * account-service event fails or is delayed.</p>
+     *
+     * @param loan the disbursed loan entity
+     */
+    private void sendDisbursementTransactionEvent(Loan loan) {
+        try {
+            TransactionEvent txnEvent = new TransactionEvent();
+            txnEvent.setTransactionType(TransactionType.DEPOSIT);
+            txnEvent.setTransactionStatus(TransactionStatus.SUCCESS);
+            txnEvent.setAmount(loan.getLoanAmount());
+            txnEvent.setSourceAccountNumber(loan.getAccountNumber());
+            txnEvent.setDestinationAccountNumber(loan.getAccountNumber());
+            txnEvent.setTransactionDescription(
+                    "Loan disbursement — loanId: " + loan.getLoanId()
+                    + " | amount: " + loan.getLoanAmount()
+                    + " | account: " + loan.getAccountNumber()
+            );
+
+            kafkaTemplate.send(KafkaConstants.TRANSACTION_PAYMENT_TOPIC,
+                            loan.getCustomerId().toString(), txnEvent)
+                    .whenComplete((result, ex) -> {
+                        if (ex != null) {
+                            logger.error("Kafka send failed [LOAN_DISBURSE → TXN_SERVICE]: loanId={}, error={}",
+                                    loan.getLoanId(), ex.getMessage(), ex);
+                        } else {
+                            logger.info("Kafka sent [LOAN_DISBURSE → TXN_SERVICE]: loanId={}, amount={}, offset={}",
+                                    loan.getLoanId(), loan.getLoanAmount(), result.getRecordMetadata().offset());
+                        }
+                    });
+        } catch (Exception e) {
+            logger.error("Failed to publish loan disbursement transaction event: loanId={}",
+                    loan.getLoanId(), e);
         }
     }
 

@@ -22,12 +22,13 @@ import java.util.UUID;
  * </ul>
  */
 @Entity
-@Table(name = "notifications", indexes = {
-        @Index(name = "idx_notification_customer", columnList = "customerId"),
-        @Index(name = "idx_notification_type", columnList = "notificationType"),
-        @Index(name = "idx_notification_source", columnList = "sourceService"),
-        @Index(name = "idx_notification_status", columnList = "status")
-})
+@Table(name = "notification"
+//        , indexes = {
+//        @Index(name = "idx_notification_customer", columnList = "customerId"),
+//        @Index(name = "idx_notification_type", columnList = "notificationType"),
+//        @Index(name = "idx_notification_source", columnList = "sourceService"),
+//        @Index(name = "idx_notification_status", columnList = "status")}
+)
 @AllArgsConstructor
 @NoArgsConstructor
 @Getter
@@ -39,8 +40,8 @@ public class Notification {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID notificationId;
 
-    /** The customer who receives this notification */
-    @Column(nullable = false)
+    /** The customer who receives this notification (null for system-level events like bank registration) */
+    @Column(nullable = true)
     private UUID customerId;
 
     /** Which microservice triggered this notification */

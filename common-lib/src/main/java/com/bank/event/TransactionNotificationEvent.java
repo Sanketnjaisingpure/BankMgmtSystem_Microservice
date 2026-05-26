@@ -1,5 +1,7 @@
 package com.bank.event;
 
+import com.bank.ENUM.NotificationType;
+import com.bank.ENUM.SourceService;
 import com.bank.ENUM.TransactionType;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -32,10 +34,10 @@ public class TransactionNotificationEvent {
     // ── Notification-specific fields ──
 
     /** Which service triggered this notification (e.g., "ACCOUNT_SERVICE") */
-    private String sourceService;
+    private SourceService sourceService;
 
     /** The type of notification (e.g., "DEPOSIT", "WITHDRAWAL", "TRANSFER") */
-    private String notificationType;
+    private NotificationType notificationType;
 
     /** Short summary/title for the notification */
     private String subject;

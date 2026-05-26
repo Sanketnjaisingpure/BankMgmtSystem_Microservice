@@ -1,5 +1,7 @@
 package com.bank.event;
 
+import com.bank.ENUM.NotificationType;
+import com.bank.ENUM.SourceService;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -16,7 +18,7 @@ import java.util.UUID;
 @NoArgsConstructor
 public class CreditCardApplicationEvent {
 
-    private UUID cardId;
+//    private UUID cardId;
 
     private UUID customerId;
 
@@ -29,10 +31,10 @@ public class CreditCardApplicationEvent {
     // ── Notification-specific fields ──
 
     /** Which service triggered this notification (e.g., "CREDIT_CARD_SERVICE") */
-    private String sourceService;
+    private SourceService sourceService;
 
     /** The type of notification (e.g., "CREDIT_CARD_APPLIED") */
-    private String notificationType;
+    private NotificationType notificationType;
 
     /** Short summary/title for the notification */
     private String subject;

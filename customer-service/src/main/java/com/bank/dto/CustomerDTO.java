@@ -12,7 +12,7 @@ public class CustomerDTO {
 
     private String email;
 
-    private String mobileNumber;
+    private String phoneNumber;
 
     private LocalDateTime createdAt;
 

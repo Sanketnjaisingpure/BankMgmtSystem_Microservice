@@ -15,7 +15,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 @Configuration
-public class KafkaProducerConfig {
+public class KafkaAccountProducerConfig {
     @Bean
     public NewTopic accountCreationTopic() {
         return TopicBuilder.name(KafkaConstants.ACCOUNT_CREATION_TOPIC)
@@ -27,6 +27,14 @@ public class KafkaProducerConfig {
     @Bean
     public NewTopic transactionNotificationTopic(){
         return TopicBuilder.name(KafkaConstants.TRANSACTION_NOTIFICATION_TOPIC)
+                .partitions(2)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic transactionPaymentTopic(){
+        return TopicBuilder.name(KafkaConstants.TRANSACTION_PAYMENT_TOPIC)
                 .partitions(2)
                 .replicas(1)
                 .build();

@@ -1,17 +1,22 @@
 package com.bank.service;
 
 
-import com.bank.ENUM.AccountStatus;
-import com.bank.ENUM.TransactionStatus;
-import com.bank.ENUM.TransactionType;
+
+import com.bank.ENUM.*;
 import com.bank.config.KafkaConstants;
 import com.bank.config.MapperConfig;
-import com.bank.dto.*;
+import com.bank.dto.CustomerDTO;
+import com.bank.dto.AccountRequestDTO;
+import com.bank.dto.PageResponse;
+import com.bank.dto.AccountResponseDTO;
+import com.bank.dto.BankDTO;
+import com.bank.dto.TransactionRecordRequestDTO;
 import com.bank.event.AccountCreationEvent;
 import com.bank.event.TransactionEvent;
-import com.bank.event.TransactionNotificationEvent;
 import com.bank.exception.ResourceNotFoundException;
 import com.bank.feign.CustomerFeignService;
+import com.bank.feign.BankFeignService;
+import com.bank.helper.notificationEventHelper;
 import com.bank.model.Account;
 import com.bank.model.IdempotencyRequest;
 import com.bank.repository.AccountRepository;
@@ -41,11 +46,15 @@ public class AccountService {
 
     private final CustomerFeignService customerFeignService;
 
+    private final BankFeignService bankFeignService;
+
     private static final Logger logger = LoggerFactory.getLogger(AccountService.class);
 
     private final MapperConfig mapperConfig;
 
     private  final AccountRepository accountRepository;
+
+    private final notificationEventHelper notificationEventHelper;
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
@@ -56,14 +65,17 @@ public class AccountService {
 
    public AccountService(AccountRepository accountRepository,
                           CustomerFeignService customerFeignService,
+                          BankFeignService bankFeignService,
                           IdempotencyRepository idempotencyRepository,
+                          notificationEventHelper notificationEventHelper,
                           KafkaTemplate<String, Object> kafkaTemplate,
                           MapperConfig mapperConfig) {
        this.accountRepository = accountRepository;
        this.idempotencyRepository =idempotencyRepository;
+       this.notificationEventHelper = notificationEventHelper;
        this.mapperConfig = mapperConfig;
        this.customerFeignService = customerFeignService;
-
+       this.bankFeignService = bankFeignService;
        this.kafkaTemplate = kafkaTemplate;
    }
 
@@ -103,6 +115,36 @@ public class AccountService {
        return customerDTO;
    }
 
+    /**
+     * Validates that the given bankId refers to an existing, ACTIVE bank in bank-service.
+     * Called only when a non-null {@code bankId} is supplied in {@code AccountRequestDTO}.
+     *
+     * @throws IllegalArgumentException if the bank is not ACTIVE
+     * @throws ResponseStatusException  if the Feign call to bank-service fails
+     */
+    private BankDTO validateAndFetchBank(UUID bankId) {
+        try {
+            BankDTO bank = bankFeignService.getBankById(bankId).getBody();
+            if (bank == null) {
+                logger.warn("Bank not found via Feign: bankId={}", bankId);
+                throw new ResourceNotFoundException("Bank not found with ID: " + bankId);
+            }
+            if (!"ACTIVE".equalsIgnoreCase(bank.getBankStatus())) {
+                logger.warn("Bank is not ACTIVE: bankId={}, status={}", bankId, bank.getBankStatus());
+                throw new IllegalArgumentException(
+                        "Cannot link account to bank '" + bank.getBankName() +
+                        "' — bank status is " + bank.getBankStatus() + ". Only ACTIVE banks are allowed.");
+            }
+            return bank;
+        } catch (ResourceNotFoundException | IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            logger.error("Failed to validate bank via bank-service: bankId={}", bankId, e);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "Unable to reach bank-service to validate bankId: " + bankId, e);
+        }
+    }
+
 
     public AccountResponseDTO createAccount(AccountRequestDTO accountDto) {
         logger.info("Creating new Account for customerId={}", accountDto.customerId());
@@ -120,7 +162,7 @@ public class AccountService {
         account.setBalance(accountDto.balance());
         account.setStatus(AccountStatus.ACTIVE);
 
-        String accountNumber = generateAccountNumber(customerDTO.getMobileNumber());
+        String accountNumber = generateAccountNumber(customerDTO.getPhoneNumber());
         account.setAccountNumber(accountNumber);
         logger.info("Generated accountNumber={} for customerId={}", accountNumber, accountDto.customerId());
 
@@ -130,10 +172,15 @@ public class AccountService {
         account.setCreatedAt(LocalDateTime.now());
         account.setUpdatedAt(LocalDateTime.now());
 
+        // ── Link to bank (mandatory) ──
+        // Validate that the bank exists and is ACTIVE before creating the account.
+        logger.info("Validating bank before account creation: bankId={}", accountDto.bankId());
+        BankDTO bank = validateAndFetchBank(accountDto.bankId());
+        account.setBankId(accountDto.bankId());
+        logger.info("Account linked to bank: bankId={}, bankName={}", bank.getBankId(), bank.getBankName());
+
         accountRepository.save(account);
         logger.info("Account saved successfully: accountNumber={}, customerId={}", accountNumber, accountDto.customerId());
-
-
         try {
 
             TransactionEvent transactionEvent = createTransactionEvent(accountNumber, accountDto.balance());
@@ -145,10 +192,15 @@ public class AccountService {
             event.setCustomerId(accountDto.customerId());
             event.setEmail(customerDTO.getEmail());
             event.setMessage("Account " + accountNumber + " created successfully");
-            event.setSourceService("ACCOUNT_SERVICE");
-            event.setNotificationType("ACCOUNT_CREATED");
+            event.setSourceService(SourceService.ACCOUNT_SERVICE);
+            event.setNotificationType(NotificationType.ACCOUNT_CREATED);
             event.setSubject("Account Created");
             event.setReferenceId(accountNumber);
+            event.setCreatedAt(LocalDateTime.now());
+            event.setMetadata(String.format(
+                    "{\"customerId\":\"%s\",\"accountNumber\":\"%s\",\"cardStatus\":\"%s\",\"balance\":\"%s\"}",
+                    accountDto.customerId(), accountNumber, "Account created Successfully" , accountDto.balance()
+            ));
 
             logger.info("Sending account creation notification via Kafka for accountNumber={}", accountNumber);
             kafkaTemplate.send(KafkaConstants.ACCOUNT_CREATION_TOPIC, accountDto.customerId().toString(), event);
@@ -236,12 +288,14 @@ public class AccountService {
     }
 
 
-    private TransactionEvent paymentTransaction(String sourceAccountNumber , String destinationAccountNumber, TransactionType transactionType ,BigDecimal amount,String IdempotencyKey ){
+    private TransactionEvent paymentTransaction(String sourceAccountNumber , String destinationAccountNumber, TransactionType transactionType ,BigDecimal amount ){
         TransactionEvent transactionEvent = new TransactionEvent();
         if (transactionType==TransactionType.DEPOSIT){
-            transactionEvent.setTransactionDescription("Deposit");
+            transactionEvent.setTransactionDescription("Amount is Deposited");
+        }else if (transactionType==TransactionType.WITHDRAW){
+            transactionEvent.setTransactionDescription("Amount is Withdrawn");
         }else{
-            transactionEvent.setTransactionDescription("Withdraw");
+            transactionEvent.setTransactionDescription("Amount is Transferred");
         }
         transactionEvent.setSourceAccountNumber(sourceAccountNumber);
         transactionEvent.setDestinationAccountNumber(destinationAccountNumber);
@@ -304,11 +358,11 @@ public class AccountService {
         // ✅ Step 4: Non-critical operations (Kafka / Notification)
         try {
             // Notification
-            sendTransactionNotification(account, accountNumber, amount, TransactionType.DEPOSIT);
+            notificationEventHelper.sendTransactionNotification(account, accountNumber, amount, TransactionType.DEPOSIT);
 
             // Transaction event
             TransactionEvent transactionEvent =
-                    paymentTransaction(accountNumber, accountNumber, TransactionType.DEPOSIT, amount , idempotencyKey);
+                    paymentTransaction(accountNumber, accountNumber, TransactionType.DEPOSIT, amount );
 
             kafkaTemplate.send(KafkaConstants.TRANSACTION_PAYMENT_TOPIC, transactionEvent)
                     .whenComplete((result, ex) -> {
@@ -338,7 +392,7 @@ public class AccountService {
 
     // Transfer amount from One account to another
     @Transactional
-    public AccountResponseDTO transferAmount(TransactionRecordRequestDTO request,String idempotencyKey) {
+    public AccountResponseDTO transferAmount(TransactionRecordRequestDTO request, String idempotencyKey) {
 
         logger.info("Processing transfer: sourceAccount={}, destinationAccount={}, amount={}, idempotencyKey={}",
                 request.sourceAccountNumber(),
@@ -418,12 +472,12 @@ public class AccountService {
         // ✅ Step 6: Non-critical operations (Kafka + Notification)
         try {
             // Notifications
-            sendTransactionNotification(sourceAccount,
+            notificationEventHelper.sendTransactionNotification(sourceAccount,
                     request.sourceAccountNumber(),
                     request.amount(),
                     TransactionType.WITHDRAW);
 
-            sendTransactionNotification(destinationAccount,
+            notificationEventHelper.sendTransactionNotification(destinationAccount,
                     request.destinationAccountNumber(),
                     request.amount(),
                     TransactionType.DEPOSIT);
@@ -435,7 +489,7 @@ public class AccountService {
                     sourceAccount.getAccountNumber(),
                     destinationAccount.getAccountNumber(),
                     TransactionType.TRANSFER,
-                    request.amount(),idempotencyKey
+                    request.amount()
             );
 
             kafkaTemplate.send(KafkaConstants.TRANSACTION_PAYMENT_TOPIC, transactionEvent)
@@ -541,10 +595,10 @@ public class AccountService {
 
         // ✅ Kafka / Notification (non-critical)
         try {
-            sendTransactionNotification(account, accountNumber, amount, TransactionType.WITHDRAW);
+             notificationEventHelper.sendTransactionNotification(account, accountNumber, amount, TransactionType.WITHDRAW);
 
             TransactionEvent transactionEvent =
-                    paymentTransaction(accountNumber, accountNumber, TransactionType.WITHDRAW, amount,idempotencyKey);
+                    paymentTransaction(accountNumber, accountNumber, TransactionType.WITHDRAW, amount);
 
             kafkaTemplate.send(KafkaConstants.TRANSACTION_PAYMENT_TOPIC, transactionEvent)
                     .whenComplete((result, ex) -> {
@@ -586,99 +640,8 @@ public class AccountService {
         return mapperConfig.modelMapper().map(account, AccountResponseDTO.class);
     }
 
-    private void sendTransactionNotification(Account account,
-                                             String accountNumber,
-                                             BigDecimal amount,
-                                             TransactionType transactionType) {
 
-        logger.info("Preparing transaction notification: accountNumber={}, customerId={}, type={}, amount={}",
-                accountNumber,
-                account.getCustomerId(),
-                transactionType,
-                amount);
 
-        try {
-            // ✅ Build event
-            TransactionNotificationEvent event = buildTransactionNotificationEvent(
-                    account, accountNumber, amount, transactionType
-            );
 
-            logger.debug("Notification event payload prepared: {}", event);
-
-            // ✅ Send to Kafka with callback
-            kafkaTemplate.send(KafkaConstants.TRANSACTION_NOTIFICATION_TOPIC, event)
-                    .whenComplete((result, ex) -> {
-                        if (ex != null) {
-                            logger.error("Failed to send notification event: accountNumber={}, type={}, error={}",
-                                    accountNumber, transactionType, ex.getMessage(), ex);
-                        } else {
-                            logger.info("Notification event sent successfully: accountNumber={}, partition={}, offset={}",
-                                    accountNumber,
-                                    result.getRecordMetadata().partition(),
-                                    result.getRecordMetadata().offset());
-                        }
-                    });
-
-        } catch (Exception e) {
-            // ⚠️ Do NOT break main flow
-            logger.error("Error while preparing/sending notification: accountNumber={}, type={}",
-                    accountNumber, transactionType, e);
-        }
-    }
-
-    private TransactionNotificationEvent buildTransactionNotificationEvent(Account account,
-                                                                           String accountNumber,
-                                                                           BigDecimal amount,
-                                                                           TransactionType type) {
-
-        TransactionNotificationEvent event = new TransactionNotificationEvent();
-
-        event.setAccountNumber(accountNumber);
-        event.setCustomerId(account.getCustomerId());
-        event.setTransactionType(type);
-        event.setAmount(amount);
-
-        // ── Notification-specific fields ──
-        event.setSourceService("ACCOUNT_SERVICE");
-        event.setReferenceId(accountNumber);
-
-        // Map TransactionType to NotificationType string and set message + subject
-        switch (type) {
-            case DEPOSIT -> {
-                event.setMessage(
-                        String.format("Amount %s credited to your account %s", amount, accountNumber)
-                );
-                event.setNotificationType("DEPOSIT");
-                event.setSubject("Deposit Successful");
-            }
-            case WITHDRAW -> {
-                event.setMessage(
-                        String.format("Amount %s debited from your account %s", amount, accountNumber)
-                );
-                event.setNotificationType("WITHDRAWAL");
-                event.setSubject("Withdrawal Successful");
-            }
-            case TRANSFER -> {
-                event.setMessage(
-                        String.format("Amount %s transferred from your account %s", amount, accountNumber)
-                );
-                event.setNotificationType("TRANSFER");
-                event.setSubject("Transfer Successful");
-            }
-            default -> {
-                event.setMessage("Transaction occurred");
-                event.setNotificationType("DEPOSIT");
-                event.setSubject("Transaction Notification");
-            }
-        }
-
-        // Build JSON metadata with transaction-specific details
-        event.setMetadata(String.format(
-                "{\"transactionType\":\"%s\",\"amount\":\"%s\",\"accountNumber\":\"%s\"}",
-                type, amount, accountNumber
-        ));
-
-        return event;
-    }
 
 }

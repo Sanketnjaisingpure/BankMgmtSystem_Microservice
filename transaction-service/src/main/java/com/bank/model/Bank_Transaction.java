@@ -11,11 +11,12 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
+@Table(name = "transactions")
 @AllArgsConstructor
 @NoArgsConstructor
 @Getter
 @Setter
-public class Transaction {
+public class Bank_Transaction {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -30,6 +31,7 @@ public class Transaction {
     private TransactionStatus transactionStatus;
 
     @NotNull
+    @Column(precision = 15, scale = 2)
     private BigDecimal amount;
 
     @NotNull

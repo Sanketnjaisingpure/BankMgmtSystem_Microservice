@@ -24,6 +24,7 @@ import java.util.UUID;
 public class CreditCard {
 
     @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
     private UUID cardId;
 
     /** Masked card number — only last 4 digits visible (e.g., "****-****-****-1234") */
